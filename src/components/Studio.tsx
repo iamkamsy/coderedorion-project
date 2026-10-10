@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Rack, SourceKind } from "@/audio/rack";
+import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
+import type { Rack } from "@/audio/rack";
 import { defaultParamValues, getParamSpec, PLUGINS } from "@/audio/paramSchema";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
 import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
@@ -45,6 +46,8 @@ export function Studio() {
   const [rack, setRack] = useState<Rack | null>(null);
   const [audio, setAudio] = useState<AudioState>("off");
   const [source, setSource] = useState<SourceKind>("loop");
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [camera, setCamera] = useState<CameraStatus>("off");
   const [inputMode, setInputMode] = useState<InputMode>("fake");
   const [fakeValues, setFakeValues] = useState<Record<Gesture, number>>({ pinch_left: 0.8, pinch_right: 0.3 });
@@ -104,7 +107,13 @@ export function Studio() {
         const [plugin, param] = key.split(".");
         r.setParam(plugin, param, value);
       }
-      await r.setSource(source);
+      try {
+        await r.setSource(source);
+      } catch {
+        setSource("loop");
+        setSourceError(`Could not open the ${SOURCE_LABEL[source].toLowerCase()}. Playing the test loop instead.`);
+        await r.setSource("loop");
+      }
       rackRef.current = r;
       setRack(r);
       setAudio("on");
@@ -113,14 +122,36 @@ export function Studio() {
     }
   }, [params, source]);
 
+  const setAudioStopped = useCallback((next: boolean) => {
+    const r = rackRef.current;
+    if (!r) return;
+    r.setStopped(next);
+    setStopped(next);
+  }, []);
+
+  // Esc is a panic stop. It only stops; resuming is a deliberate click.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.repeat) setAudioStopped(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setAudioStopped]);
+
   const changeSource = useCallback(async (s: SourceKind) => {
     setSource(s);
+    setSourceError(null);
     const r = rackRef.current;
+    if (isLiveSource(s)) {
+      const lowCut = r ? r.setParam("input", "lowCut", LIVE_SOURCES[s].lowCutHz) : LIVE_SOURCES[s].lowCutHz;
+      setParams((prev) => ({ ...prev, "input.lowCut": lowCut }));
+    }
     if (!r) return;
     try {
       await r.setSource(s);
     } catch {
       setSource("loop");
+      setSourceError(`Could not open the ${SOURCE_LABEL[s].toLowerCase()}. Check microphone permission and the selected input device.`);
       await r.setSource("loop");
     }
   }, []);
@@ -170,6 +201,8 @@ export function Studio() {
       <TopBar
         audio={audio}
         onStartAudio={startAudio}
+        stopped={stopped}
+        onToggleStop={() => setAudioStopped(!stopped)}
         source={source}
         onSourceChange={changeSource}
         camera={camera}
@@ -178,6 +211,16 @@ export function Studio() {
         dbStatus={dbStatus}
       />
 
+      {sourceError && (
+        <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm text-danger" role="alert">
+          {sourceError}
+        </div>
+      )}
+      {audio === "on" && stopped && (
+        <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm" role="status">
+          Audio stopped. Gestures and the rack keep running silently. Click Resume audio to bring it back.
+        </div>
+      )}
       {audio !== "on" && (
         <div className="border-b border-border bg-accent/10 px-5 py-2 text-sm">
           {audio === "error" ? "Audio could not start. Click Retry audio." : "Click Start audio to hear the rack. Headphones recommended."}
@@ -185,14 +228,14 @@ export function Studio() {
       )}
 
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[300px_minmax(0,1fr)_320px] xl:overflow-hidden">
-        <div className="order-2 flex min-h-0 flex-col lg:col-start-1 lg:row-start-2 xl:row-start-1">
+        <div className="order-2 flex flex-col xl:min-h-0 lg:col-start-1 lg:row-start-2 xl:row-start-1">
           <Assistant
             activeSummary={summary}
             onApprove={approve}
             onResetDefault={() => (setMapping(DEFAULT_MAPPING), setSummary(DEFAULT_SUMMARY))}
           />
         </div>
-        <div className="order-1 flex min-h-0 flex-col gap-4 lg:col-start-1 lg:row-start-1 xl:col-start-2 xl:overflow-y-auto">
+        <div className="order-1 flex flex-col xl:min-h-0 gap-4 lg:col-start-1 lg:row-start-1 xl:col-start-2 xl:overflow-y-auto">
           <Stage
             inputMode={inputMode}
             onInputModeChange={setInputMode}
@@ -205,7 +248,7 @@ export function Studio() {
           />
           <Spectrum rack={rack} />
         </div>
-        <div className="order-3 flex min-h-0 flex-col lg:col-start-2 lg:row-span-2 lg:row-start-1 xl:col-start-3 xl:row-span-1">
+        <div className="order-3 flex flex-col xl:min-h-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 xl:col-start-3 xl:row-span-1">
           <RackPanel values={params} bound={bound} onManualChange={manualChange} rack={rack} />
         </div>
       </main>
