@@ -2,65 +2,86 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Rack } from "@/audio/rack";
-import { PLUGINS, paramKey, specsForPlugin } from "@/audio/paramSchema";
+import { PLUGINS, paramKey, specsForPlugin, type PluginId } from "@/audio/paramSchema";
 import type { Gesture } from "@/mapping/types";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
+import { Collapsible } from "./Collapsible";
+
+export type RackVariant = "stack" | "accordion" | "row";
 
 interface Props {
   values: Record<string, number>;
   bound: Map<string, Gesture>;
   onManualChange: (plugin: string, param: string, value: number) => void;
   rack: Rack | null;
+  /** stack: one box per effect. accordion: one compressed box with dropdowns. row: compressed boxes side by side. */
+  variant?: RackVariant;
+  /** Set false when the page shows the output meter somewhere else. */
+  withOutput?: boolean;
 }
 
-export function RackPanel({ values, bound, onManualChange, rack }: Props) {
+export function RackPanel({ values, bound, onManualChange, rack, variant = "stack", withOutput = true }: Props) {
+  const paramsFor = (pluginId: PluginId, compact: boolean) => (
+    <PluginParams pluginId={pluginId} values={values} bound={bound} onManualChange={onManualChange} compact={compact} />
+  );
+  const liveCount = (pluginId: PluginId) => specsForPlugin(pluginId).filter((s) => bound.has(paramKey(s.plugin, s.param))).length;
+
+  if (variant === "accordion") {
+    const totalLive = PLUGINS.reduce((n, p) => n + liveCount(p.id), 0);
+    return (
+      <section className="rounded-[var(--radius-panel)] glass" aria-label="Effects rack">
+        <Collapsible title="Effects" badge={totalLive > 0 && <LiveBadge count={totalLive} />} defaultOpen>
+          <div className="flex flex-col">
+            {PLUGINS.map((plugin) => (
+              <Collapsible
+                key={plugin.id}
+                level="item"
+                title={plugin.label}
+                badge={liveCount(plugin.id) > 0 && <LiveBadge count={liveCount(plugin.id)} />}
+                defaultOpen
+              >
+                {paramsFor(plugin.id, true)}
+              </Collapsible>
+            ))}
+          </div>
+          <div className="mt-2 border-t border-border pt-3">
+            <OutputMeter rack={rack} bare />
+          </div>
+        </Collapsible>
+      </section>
+    );
+  }
+
+  if (variant === "row") {
+    return (
+      <section
+        className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${withOutput ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+        aria-label="Effects rack"
+      >
+        {PLUGINS.map((plugin) => (
+          <div key={plugin.id} className="rounded-[var(--radius-panel)] glass p-3">
+            <h2 className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted uppercase">
+              {plugin.label}
+              {liveCount(plugin.id) > 0 && <LiveBadge count={liveCount(plugin.id)} />}
+            </h2>
+            {paramsFor(plugin.id, true)}
+          </div>
+        ))}
+        {withOutput && (
+          <div className="rounded-[var(--radius-panel)] glass p-3">
+            <OutputMeter rack={rack} bare />
+          </div>
+        )}
+      </section>
+    );
+  }
+
   return (
     <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto" aria-label="Effects rack">
       {PLUGINS.map((plugin) => (
-        <div key={plugin.id} className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+        <div key={plugin.id} className="rounded-[var(--radius-panel)] glass p-4">
           <h2 className="mb-3 text-sm font-semibold tracking-wide text-muted uppercase">{plugin.label}</h2>
-          <div className="flex flex-col gap-3">
-            {specsForPlugin(plugin.id).map((spec) => {
-              const key = paramKey(spec.plugin, spec.param);
-              const gesture = bound.get(key);
-              const value = values[key];
-              // Exponential params get a log-scaled slider so the useful range is not squashed.
-              const logScale = spec.curve === "exp" && spec.min > 0;
-              const toSlider = (v: number) =>
-                logScale ? Math.log(v / spec.min) / Math.log(spec.max / spec.min) : (v - spec.min) / (spec.max - spec.min);
-              const fromSlider = (t: number) =>
-                logScale ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min);
-              return (
-                <label key={key} className="flex flex-col gap-1">
-                  <span className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      {spec.label}
-                      {gesture && (
-                        <span
-                          className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent"
-                          title={`Driven by ${GESTURE_LABEL[gesture]}`}
-                        >
-                          {GESTURE_LABEL[gesture]}
-                        </span>
-                      )}
-                    </span>
-                    <span className={`font-mono text-xs ${gesture ? "text-accent" : "text-muted"}`}>{formatParam(spec, value)}</span>
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.001}
-                    value={toSlider(value)}
-                    disabled={!!gesture}
-                    onChange={(e) => onManualChange(spec.plugin, spec.param, fromSlider(Number(e.target.value)))}
-                    className={gesture ? "" : "cool"}
-                    aria-label={`${plugin.label} ${spec.label}`}
-                  />
-                </label>
-              );
-            })}
-          </div>
+          {paramsFor(plugin.id, false)}
         </div>
       ))}
       <OutputMeter rack={rack} />
@@ -68,7 +89,74 @@ export function RackPanel({ values, bound, onManualChange, rack }: Props) {
   );
 }
 
-function OutputMeter({ rack }: { rack: Rack | null }) {
+function LiveBadge({ count }: { count: number }) {
+  return (
+    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tracking-normal text-accent normal-case">
+      {count} live
+    </span>
+  );
+}
+
+function PluginParams({
+  pluginId,
+  values,
+  bound,
+  onManualChange,
+  compact,
+}: {
+  pluginId: PluginId;
+  values: Record<string, number>;
+  bound: Map<string, Gesture>;
+  onManualChange: (plugin: string, param: string, value: number) => void;
+  compact: boolean;
+}) {
+  const plugin = PLUGINS.find((p) => p.id === pluginId);
+  return (
+    <div className={`flex flex-col ${compact ? "gap-2" : "gap-3"}`}>
+      {specsForPlugin(pluginId).map((spec) => {
+        const key = paramKey(spec.plugin, spec.param);
+        const gesture = bound.get(key);
+        const value = values[key];
+        // Exponential params get a log-scaled slider so the useful range is not squashed.
+        const logScale = spec.curve === "exp" && spec.min > 0;
+        const toSlider = (v: number) =>
+          logScale ? Math.log(v / spec.min) / Math.log(spec.max / spec.min) : (v - spec.min) / (spec.max - spec.min);
+        const fromSlider = (t: number) => (logScale ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min));
+        return (
+          <label key={key} className={`flex flex-col ${compact ? "gap-0.5" : "gap-1"}`}>
+            <span className={`flex items-center justify-between ${compact ? "text-xs" : "text-sm"}`}>
+              <span className="flex items-center gap-2">
+                {spec.label}
+                {gesture && (
+                  <span
+                    className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent"
+                    title={`Driven by ${GESTURE_LABEL[gesture]}`}
+                  >
+                    {GESTURE_LABEL[gesture]}
+                  </span>
+                )}
+              </span>
+              <span className={`font-mono text-xs ${gesture ? "text-accent" : "text-muted"}`}>{formatParam(spec, value)}</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.001}
+              value={toSlider(value)}
+              disabled={!!gesture}
+              onChange={(e) => onManualChange(spec.plugin, spec.param, fromSlider(Number(e.target.value)))}
+              className={gesture ? "" : "cool"}
+              aria-label={`${plugin?.label ?? pluginId} ${spec.label}`}
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+export function OutputMeter({ rack, bare = false }: { rack: Rack | null; bare?: boolean }) {
   const barRef = useRef<HTMLDivElement>(null);
   const [limiting, setLimiting] = useState(false);
 
@@ -89,8 +177,8 @@ function OutputMeter({ rack }: { rack: Rack | null }) {
   }, [rack]);
 
   return (
-    <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
-      <div className="mb-2 flex items-center justify-between text-sm">
+    <div className={bare ? "" : "rounded-[var(--radius-panel)] glass p-4"}>
+      <div className={`mb-2 flex items-center justify-between ${bare ? "text-xs" : "text-sm"}`}>
         <span className="font-semibold tracking-wide text-muted uppercase">Output</span>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${limiting ? "bg-warn/20 text-warn" : "bg-border text-muted"}`}

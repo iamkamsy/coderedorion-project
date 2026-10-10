@@ -159,9 +159,9 @@ export function Stage(props: Props) {
   const noHands = cameraLive && values.pinch_left === null && values.pinch_right === null;
 
   return (
-    <section className="flex min-h-0 flex-col gap-3" aria-label="Camera stage">
+    <section className="flex shrink-0 flex-col gap-3" aria-label="Camera stage">
       <div
-        className={`relative aspect-video w-full overflow-hidden rounded-[var(--radius-panel)] border border-border bg-black ${inputMode === "fake" ? "cursor-ns-resize" : ""}`}
+        className={`relative aspect-video w-full shrink-0 overflow-hidden rounded-[var(--radius-panel)] glass ${inputMode === "fake" ? "cursor-ns-resize" : ""}`}
         onPointerDown={(e) => {
           if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -186,7 +186,7 @@ export function Stage(props: Props) {
                 {chips[g].map((c) => (
                   <span
                     key={c.label}
-                    className="rounded-full border border-accent/60 bg-bg/80 px-2 py-0.5 font-mono text-xs text-accent backdrop-blur"
+                    className="rounded-full border border-accent/60 bg-black/35 backdrop-blur-xl px-2 py-0.5 font-mono text-xs text-accent"
                   >
                     {c.label} {c.value}
                   </span>
@@ -204,7 +204,7 @@ export function Stage(props: Props) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] border border-border bg-panel px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] glass px-4 py-3 text-sm">
         <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Input mode">
           {(["camera", "fake"] as const).map((m) => (
             <button
@@ -277,7 +277,7 @@ function StageOverlay({
       title = "Camera is off";
       body = "Enable the camera to control effects with your hands, or drag up and down here to fake a pinch.";
       action = (
-        <button type="button" onClick={onEnable} className="pointer-events-auto mt-3 rounded-lg bg-accent px-4 py-2 font-medium text-bg">
+        <button type="button" onClick={onEnable} className="pointer-events-auto mt-3 rounded-lg bg-accent px-4 py-2 font-medium text-text">
           Enable camera
         </button>
       );
@@ -303,7 +303,7 @@ function StageOverlay({
   if (!title && !body) return null;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-      <div className="max-w-sm rounded-xl border border-border bg-bg/80 px-5 py-4 text-center backdrop-blur">
+      <div className="max-w-sm rounded-xl border border-border bg-black/35 backdrop-blur-xl px-5 py-4 text-center">
         {title && <p className="font-medium">{title}</p>}
         {body && <p className="mt-1 text-sm text-muted">{body}</p>}
         {action}
@@ -314,7 +314,7 @@ function StageOverlay({
 
 function PinchMeter({ label, value }: { label: string; value: number | null }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-bg/80 px-2.5 py-1.5 backdrop-blur">
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-black/35 backdrop-blur-xl px-2.5 py-1.5">
       <span className="text-xs text-muted">{label}</span>
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-border">
         <div className="h-full bg-accent transition-[width] duration-75" style={{ width: `${(value ?? 0) * 100}%` }} />
@@ -339,10 +339,11 @@ function drawOverlay(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, w, h);
+  const tokens = getComputedStyle(document.documentElement);
 
   for (const hand of frame.hands) {
     const lm = hand.landmarks;
-    ctx.strokeStyle = "rgba(232, 230, 224, 0.55)";
+    ctx.strokeStyle = "rgba(245, 245, 247, 0.55)";
     ctx.lineWidth = 3;
     ctx.beginPath();
     for (const c of connections) {
@@ -351,14 +352,14 @@ function drawOverlay(
     }
     ctx.stroke();
 
-    ctx.fillStyle = "#5BC0BE";
+    ctx.fillStyle = tokens.getPropertyValue("--text").trim();
     for (const p of lm) {
       ctx.beginPath();
       ctx.arc(p.x * w, p.y * h, 4, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    ctx.strokeStyle = "#F26B21";
+    ctx.strokeStyle = tokens.getPropertyValue("--accent").trim();
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(lm[4].x * w, lm[4].y * h);

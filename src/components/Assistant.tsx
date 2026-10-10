@@ -24,9 +24,12 @@ interface Props {
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
+  /** Render as inset boxes for use inside another panel, such as a dropdown section. */
+  embedded?: boolean;
 }
 
-export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
+export function Assistant({ activeSummary, onApprove, onResetDefault, embedded = false }: Props) {
+  const box = embedded ? "rounded-xl border border-border bg-bg/60" : "rounded-[var(--radius-panel)] glass";
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +65,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
 
   return (
     <aside className="flex min-h-0 flex-col gap-3" aria-label="Assistant">
-      <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+      <div className={`${box} ${embedded ? "p-3" : "p-4"}`}>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
           <button type="button" onClick={onResetDefault} className="text-xs text-muted hover:text-text">
@@ -72,8 +75,11 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
         <p className="mt-2 text-sm">{activeSummary}</p>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel">
-        <div className="flex min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-4" aria-live="polite">
+      <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
+        <div
+          className={`flex flex-1 flex-col gap-2 overflow-y-auto ${embedded ? "max-h-64 min-h-24 p-3" : "min-h-40 p-4"}`}
+          aria-live="polite"
+        >
           {messages.length === 0 && (
             <p className="text-sm text-muted">Tell the rack what you want to hear. The AI proposes which parameters your pinch controls.</p>
           )}
@@ -147,7 +153,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="rounded-lg bg-accent px-3 text-sm font-medium text-bg disabled:opacity-50"
+            className="rounded-lg bg-accent px-3 text-sm font-medium text-text disabled:opacity-50"
           >
             Send
           </button>
@@ -181,7 +187,7 @@ function MappingCard({ proposal, onApprove, onReject }: { proposal: Proposal; on
         )}
       </ul>
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={onApprove} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-bg">
+        <button type="button" onClick={onApprove} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-text">
           Approve
         </button>
         <button type="button" onClick={onReject} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-text">
