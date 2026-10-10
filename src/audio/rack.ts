@@ -6,20 +6,25 @@ export type { SourceKind };
 
 const RAMP_SECONDS = 0.05;
 const LIMITER_THRESHOLD_DB = -6;
+/** Fade time for stop and resume, long enough to avoid a click. */
+const STOP_RAMP_SECONDS = 0.05;
 
 /**
  * Live input -> Low cut -> Gate --+
- *                                 +-> Filter -> FeedbackDelay -> Reverb -> Limiter -> speakers.
+ *                                 +-> Filter -> FeedbackDelay -> Reverb -> Master -> Limiter -> speakers.
  * Test loop ----------------------+
  *
- * The limiter is created with the rack and cannot be bypassed or removed.
+ * The limiter is created with the rack and cannot be bypassed or removed. Master is the
+ * stop/resume fader; inputs stay open while stopped so resuming is instant.
  * Must be started from a user gesture (browser autoplay rules).
  */
 export class Rack {
   private filter: Tone.Filter;
   private delay: Tone.FeedbackDelay;
   private reverb: Tone.Reverb;
+  private master: Tone.Gain;
   private limiter: Tone.Limiter;
+  private stopped = false;
   private preMeter: Tone.Meter;
   private postMeter: Tone.Meter;
   private fft: Tone.FFT;
@@ -52,14 +57,15 @@ export class Rack {
     this.delay = new Tone.FeedbackDelay({ delayTime: v["delay.delayTime"], feedback: v["delay.feedback"], wet: v["delay.wet"] });
     this.reverb = new Tone.Reverb({ decay: v["reverb.decay"], wet: v["reverb.wet"] });
     this.limiter = new Tone.Limiter(LIMITER_THRESHOLD_DB);
+    this.master = new Tone.Gain(1);
     this.preMeter = new Tone.Meter({ smoothing: 0.8 });
     this.postMeter = new Tone.Meter({ smoothing: 0.8 });
     this.fft = new Tone.FFT(256);
 
     this.liveIn.chain(this.lowCut, this.gate, this.input);
     this.lowCut.connect(this.gateMeter);
-    this.input.chain(this.filter, this.delay, this.reverb, this.limiter, Tone.getDestination());
-    this.reverb.connect(this.preMeter);
+    this.input.chain(this.filter, this.delay, this.reverb, this.master, this.limiter, Tone.getDestination());
+    this.master.connect(this.preMeter);
     this.limiter.connect(this.postMeter);
     this.limiter.connect(this.fft);
   }
@@ -201,6 +207,17 @@ export class Rack {
     return toDb(this.gateMeter.getValue()) > this.values["input.gateThreshold"];
   }
 
+  /** Fade the output to silence (or back). Sources and inputs keep running. */
+  setStopped(stopped: boolean) {
+    this.stopped = stopped;
+    this.master.gain.cancelScheduledValues(Tone.now());
+    this.master.gain.rampTo(stopped ? 0 : 1, STOP_RAMP_SECONDS);
+  }
+
+  isStopped(): boolean {
+    return this.stopped;
+  }
+
   /** True when the signal into the limiter is above its threshold. */
   isLimiting(): boolean {
     return toDb(this.preMeter.getValue()) > LIMITER_THRESHOLD_DB;
@@ -218,6 +235,7 @@ export class Rack {
       this.filter,
       this.delay,
       this.reverb,
+      this.master,
       this.limiter,
       this.preMeter,
       this.postMeter,

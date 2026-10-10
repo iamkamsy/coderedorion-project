@@ -10,6 +10,8 @@ export type AudioState = "off" | "starting" | "on" | "error";
 interface Props {
   audio: AudioState;
   onStartAudio: () => void;
+  stopped: boolean;
+  onToggleStop: () => void;
   source: SourceKind;
   onSourceChange: (s: SourceKind) => void;
   camera: CameraStatus;
@@ -27,7 +29,18 @@ const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
   error: { text: "Tracking failed", tone: "bg-danger" },
 };
 
-export function TopBar({ audio, onStartAudio, source, onSourceChange, camera, dataConsent, onConsentChange, dbStatus }: Props) {
+export function TopBar({
+  audio,
+  onStartAudio,
+  stopped,
+  onToggleStop,
+  source,
+  onSourceChange,
+  camera,
+  dataConsent,
+  onConsentChange,
+  dbStatus,
+}: Props) {
   const cam = CAMERA_LABEL[camera];
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3">
@@ -76,14 +89,26 @@ export function TopBar({ audio, onStartAudio, source, onSourceChange, camera, da
           Dashboard
         </Link>
 
-        <button
-          type="button"
-          onClick={onStartAudio}
-          disabled={audio === "starting" || audio === "on"}
-          className={`rounded-lg px-4 py-1.5 font-medium ${audio === "on" ? "bg-cool/15 text-cool" : "bg-accent text-bg"} disabled:cursor-default`}
-        >
-          {audio === "on" ? "Audio on" : audio === "starting" ? "Starting..." : audio === "error" ? "Retry audio" : "Start audio"}
-        </button>
+        {audio === "on" ? (
+          <button
+            type="button"
+            onClick={onToggleStop}
+            aria-pressed={stopped}
+            title={stopped ? "Fade the output back in" : "Fade the output to silence (Esc)"}
+            className={`rounded-lg px-4 py-1.5 font-medium ${stopped ? "bg-accent text-bg" : "border border-danger/50 text-danger hover:bg-danger/10"}`}
+          >
+            {stopped ? "Resume audio" : "Stop audio"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onStartAudio}
+            disabled={audio === "starting"}
+            className="rounded-lg bg-accent px-4 py-1.5 font-medium text-bg disabled:cursor-default"
+          >
+            {audio === "starting" ? "Starting..." : audio === "error" ? "Retry audio" : "Start audio"}
+          </button>
+        )}
       </div>
     </header>
   );

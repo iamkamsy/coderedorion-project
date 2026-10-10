@@ -47,6 +47,7 @@ export function Studio() {
   const [audio, setAudio] = useState<AudioState>("off");
   const [source, setSource] = useState<SourceKind>("loop");
   const [sourceError, setSourceError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [camera, setCamera] = useState<CameraStatus>("off");
   const [inputMode, setInputMode] = useState<InputMode>("fake");
   const [fakeValues, setFakeValues] = useState<Record<Gesture, number>>({ pinch_left: 0.8, pinch_right: 0.3 });
@@ -121,6 +122,22 @@ export function Studio() {
     }
   }, [params, source]);
 
+  const setAudioStopped = useCallback((next: boolean) => {
+    const r = rackRef.current;
+    if (!r) return;
+    r.setStopped(next);
+    setStopped(next);
+  }, []);
+
+  // Esc is a panic stop. It only stops; resuming is a deliberate click.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.repeat) setAudioStopped(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setAudioStopped]);
+
   const changeSource = useCallback(async (s: SourceKind) => {
     setSource(s);
     setSourceError(null);
@@ -184,6 +201,8 @@ export function Studio() {
       <TopBar
         audio={audio}
         onStartAudio={startAudio}
+        stopped={stopped}
+        onToggleStop={() => setAudioStopped(!stopped)}
         source={source}
         onSourceChange={changeSource}
         camera={camera}
@@ -195,6 +214,11 @@ export function Studio() {
       {sourceError && (
         <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm text-danger" role="alert">
           {sourceError}
+        </div>
+      )}
+      {audio === "on" && stopped && (
+        <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm" role="status">
+          Audio stopped. Gestures and the rack keep running silently. Click Resume audio to bring it back.
         </div>
       )}
       {audio !== "on" && (

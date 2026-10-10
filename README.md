@@ -61,6 +61,8 @@ Open <http://localhost:3000> in **Chrome**. Click **Start audio**, then either:
 - click **Enable camera** and pinch thumb and index finger in front of the webcam, or
 - drag up and down on the stage (or use the **Fake pinch** sliders) if you have no camera.
 
+**Stop audio** in the top bar (or **Esc** anywhere) fades the output to silence in about 50 ms. Tracking and inputs keep running, so **Resume audio** brings the sound back instantly.
+
 Use headphones, especially with a live source. The audio source menu has three options:
 
 - **Test loop**: built-in synth, no input needed.
