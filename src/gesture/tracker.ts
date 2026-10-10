@@ -1,7 +1,7 @@
 import { FilesetResolver, HandLandmarker, type NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { Gesture } from "@/mapping/types";
 import { OneEuroFilter } from "./oneEuro";
-import { pinchRatio } from "./pinch";
+import { isOpenHand, isPinkyExtended, pinchRatio } from "./pinch";
 
 /** Copied from node_modules on install (scripts/copy-mediapipe.mjs). */
 const WASM_PATH = "/mediapipe/wasm";
@@ -12,6 +12,10 @@ export interface TrackedHand {
   landmarks: NormalizedLandmark[];
   /** Smoothed thumb-index ratio, before calibration. */
   ratio: number;
+  /** True for a flat open palm (all fingers extended), as opposed to a pinch or fist. */
+  isOpen: boolean;
+  /** True when the pinky is stuck out. Freezes this hand's pinch at its current value. */
+  pinkyExtended: boolean;
 }
 
 export type TrackerFrame = { hands: TrackedHand[]; timestamp: number };
@@ -67,7 +71,13 @@ export class HandTracker {
         const raw = pinchRatio(landmarks);
         if (raw === null) return;
         seen.add(gesture);
-        hands.push({ gesture, landmarks, ratio: this.filters[gesture].filter(raw, now) });
+        hands.push({
+          gesture,
+          landmarks,
+          ratio: this.filters[gesture].filter(raw, now),
+          isOpen: isOpenHand(landmarks),
+          pinkyExtended: isPinkyExtended(landmarks),
+        });
       });
       for (const g of Object.keys(this.filters) as Gesture[]) if (!seen.has(g)) this.filters[g].reset();
 

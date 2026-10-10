@@ -129,6 +129,11 @@ export function Studio() {
     setStopped(next);
   }, []);
 
+  // A fully open hand is a hands-free panic stop, same as Esc: it only stops, resuming is a deliberate click.
+  const onOpenHand = useCallback(() => {
+    if (!stopped) setAudioStopped(true);
+  }, [stopped, setAudioStopped]);
+
   // Esc is a panic stop. It only stops; resuming is a deliberate click.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -241,6 +246,7 @@ export function Studio() {
             onInputModeChange={setInputMode}
             onCameraStatus={setCamera}
             onTracked={setTrackedValues}
+            onOpenHand={onOpenHand}
             fakeValues={fakeValues}
             onFakeChange={(g, v) => setFakeValues((prev) => ({ ...prev, [g]: v }))}
             values={gestureValues}
