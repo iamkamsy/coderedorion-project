@@ -3,20 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import type { Rack } from "@/audio/rack";
 import { PLUGINS, paramKey, specsForPlugin } from "@/audio/paramSchema";
+import { rackPlugins, type EffectId } from "@/audio/rackSpec";
 import type { Gesture } from "@/mapping/types";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 
 interface Props {
+  modules: readonly EffectId[];
   values: Record<string, number>;
   bound: Map<string, Gesture>;
   onManualChange: (plugin: string, param: string, value: number) => void;
   rack: Rack | null;
 }
 
-export function RackPanel({ values, bound, onManualChange, rack }: Props) {
+export function RackPanel({ modules, values, bound, onManualChange, rack }: Props) {
+  const shown = new Set<string>(rackPlugins(modules));
   return (
     <aside className="flex flex-col gap-3 xl:min-h-0 xl:overflow-y-auto" aria-label="Effects rack">
-      {PLUGINS.map((plugin) => (
+      {PLUGINS.filter((p) => shown.has(p.id)).map((plugin) => (
         <div key={plugin.id} className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">{plugin.label}</h2>

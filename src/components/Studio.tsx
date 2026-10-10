@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
 import type { Rack } from "@/audio/rack";
-import { defaultParamValues, getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import { STUDIO_MODULES, defaultValuesFor, type EffectId } from "@/audio/rackSpec";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
 import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
 import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
@@ -41,7 +42,18 @@ const consentStore = {
   },
 };
 
-export function Studio() {
+interface StudioProps {
+  /** Effects this rack loads. Mappings are limited to them. */
+  modules?: readonly EffectId[];
+}
+
+/**
+ * One self-contained session: its own rack, tracker, event batcher and session id.
+ * Unmounting releases all of it, so mount a new instance (for example with a `key`)
+ * to start a fresh, isolated session.
+ */
+export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
+  const aliveRef = useRef(false);
   const rackRef = useRef<Rack | null>(null);
   const [rack, setRack] = useState<Rack | null>(null);
   const [audio, setAudio] = useState<AudioState>("off");
@@ -54,7 +66,7 @@ export function Studio() {
   const [trackedValues, setTrackedValues] = useState<GestureValues>({ pinch_left: null, pinch_right: null });
   const [mapping, setMapping] = useState<Mapping>(DEFAULT_MAPPING);
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
-  const [params, setParams] = useState<Record<string, number>>(defaultParamValues);
+  const [params, setParams] = useState<Record<string, number>>(() => defaultValuesFor(modules));
   const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
 
@@ -71,16 +83,23 @@ export function Studio() {
     fetch("/api/mappings", { headers: ownerHeaders(), signal: AbortSignal.timeout(5000) })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        const valid = data?.active ? validateMapping(data.active.mapping) : null;
+        const valid = data?.active ? validateMapping(data.active.mapping, { plugins: modules }) : null;
         if (valid?.ok) {
           setMapping(valid.mapping);
           setSummary(data.active.name);
         }
       })
       .catch(() => {});
-  }, []);
+  }, [modules]);
 
-  useEffect(() => () => rackRef.current?.dispose(), []);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      rackRef.current?.dispose();
+      rackRef.current = null;
+    };
+  }, []);
 
   const gestureValues: GestureValues = inputMode === "fake" ? fakeValues : trackedValues;
   const bound = useMemo(() => boundParams(mapping), [mapping]);
@@ -102,7 +121,12 @@ export function Studio() {
     setAudio("starting");
     try {
       const { Rack } = await import("@/audio/rack");
-      const r = await Rack.start();
+      const r = await Rack.start({ modules });
+      // Left this session while audio was starting: release the rack instead of leaking it.
+      if (!aliveRef.current) {
+        r.dispose();
+        return;
+      }
       for (const [key, value] of Object.entries(params)) {
         const [plugin, param] = key.split(".");
         r.setParam(plugin, param, value);
@@ -114,13 +138,17 @@ export function Studio() {
         setSourceError(`Could not open the ${SOURCE_LABEL[source].toLowerCase()}. Playing the test loop instead.`);
         await r.setSource("loop");
       }
+      if (!aliveRef.current) {
+        r.dispose();
+        return;
+      }
       rackRef.current = r;
       setRack(r);
       setAudio("on");
     } catch {
       setAudio("error");
     }
-  }, [params, source]);
+  }, [modules, params, source]);
 
   const setAudioStopped = useCallback((next: boolean) => {
     const r = rackRef.current;
@@ -230,6 +258,7 @@ export function Studio() {
       <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[300px_minmax(0,1fr)_320px] xl:overflow-hidden">
         <div className="order-2 flex flex-col xl:min-h-0 lg:col-start-1 lg:row-start-2 xl:row-start-1">
           <Assistant
+            modules={modules}
             activeSummary={summary}
             onApprove={approve}
             onResetDefault={() => (setMapping(DEFAULT_MAPPING), setSummary(DEFAULT_SUMMARY))}
@@ -249,7 +278,7 @@ export function Studio() {
           <Spectrum rack={rack} />
         </div>
         <div className="order-3 flex flex-col xl:min-h-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 xl:col-start-3 xl:row-span-1">
-          <RackPanel values={params} bound={bound} onManualChange={manualChange} rack={rack} />
+          <RackPanel modules={modules} values={params} bound={bound} onManualChange={manualChange} rack={rack} />
         </div>
       </main>
     </div>

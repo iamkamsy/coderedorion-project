@@ -164,7 +164,3 @@ export function clampToSchema(plugin: string, param: string, value: number): num
   if (!Number.isFinite(value)) return spec.default;
   return Math.min(spec.max, Math.max(spec.min, value));
 }
-
-export function defaultParamValues(): Record<string, number> {
-  return Object.fromEntries(PARAM_SPECS.map((s) => [paramKey(s.plugin, s.param), s.default]));
-}
