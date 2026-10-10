@@ -114,13 +114,24 @@ Chat intent -> POST /api/mapping -> Gemini (structured JSON) -> validate + clamp
 - **Limiter is always on.** Every parameter is clamped to its safe range in `src/audio/paramSchema.ts`, and every change ramps.
 - **Gemini output is untrusted.** It is validated on the server and again on the client.
 
+## Lessons (`/learn`)
+
+Three bite-sized lessons for beginners. Each one loads a small rack with only the effects it teaches, plus presets, a step-by-step coach and an assistant that can answer questions:
+
+1. **Echoes in time** (filter, delay): the demo lesson
+2. **Grit and warmth** (distortion, filter): preview
+3. **Movement** (phaser, reverb): preview
+
+Lessons are data files in `src/tutorials/`. To add one, copy an existing file, add it to `src/tutorials/index.ts`, and run `pnpm test`, which checks every preset, mapping, step target and check against the real rack. Each lesson visit is an isolated session (its own rack, data session and state); see `docs/plans/tutorials.md`.
+
 ## Project layout
 
 ```
 src/
   app/              pages (/ and /dashboard) and API route handlers (app/api/*)
-  audio/            paramSchema.ts (single source of truth for params), rack.ts (Tone.js)
+  audio/            paramSchema.ts (single source of truth for params), rackSpec.ts, modules.ts, rack.ts (Tone.js)
   gesture/          pinch.ts (ratio + calibration), oneEuro.ts, tracker.ts (MediaPipe)
+  tutorials/        lesson data (Zod-validated), coach checks
   mapping/          types.ts (the mapping contract + Zod), validate.ts, engine.ts, defaults.ts
   ai/               gemini.ts (server only)
   db/               client.ts (server only, RLS owner scoping)

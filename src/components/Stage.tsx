@@ -159,7 +159,7 @@ export function Stage(props: Props) {
   const noHands = cameraLive && values.pinch_left === null && values.pinch_right === null;
 
   return (
-    <section className="flex min-h-0 flex-col gap-3" aria-label="Camera stage">
+    <section className="flex min-h-0 flex-col gap-3" aria-label="Camera stage" data-tour="stage">
       <div
         className={`relative aspect-video w-full overflow-hidden rounded-[var(--radius-panel)] border border-border bg-black ${inputMode === "fake" ? "cursor-ns-resize" : ""}`}
         onPointerDown={(e) => {

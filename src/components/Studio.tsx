@@ -12,7 +12,11 @@ import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
 import { formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
+import { getTutorial, type Preset } from "@/tutorials";
+import type { CoachSignals } from "@/tutorials/checks";
 import { Assistant, type Proposal } from "./Assistant";
+import { PresetBar } from "./PresetBar";
+import { TutorialCoach } from "./TutorialCoach";
 import { RackPanel } from "./RackPanel";
 import { Spectrum } from "./Spectrum";
 import { Stage, type CameraStatus, type Chip, type InputMode } from "./Stage";
@@ -47,6 +51,8 @@ interface StudioProps {
   modules?: readonly EffectId[];
   /** Effects that start bypassed. */
   initialBypassed?: readonly EffectId[];
+  /** Run as a tutorial playground: the lesson's effects, presets and coach. */
+  tutorialSlug?: string;
 }
 
 /**
@@ -54,23 +60,36 @@ interface StudioProps {
  * Unmounting releases all of it, so mount a new instance (for example with a `key`)
  * to start a fresh, isolated session.
  */
-export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPASSED }: StudioProps) {
+export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypassed = STUDIO_BYPASSED, tutorialSlug }: StudioProps) {
+  // Fixed for the lifetime of this session; a different tutorial is a different mount.
+  const [tutorial] = useState(() => (tutorialSlug ? getTutorial(tutorialSlug) : undefined) ?? null);
+  const modules = tutorial?.modules ?? studioModules;
+  const startMapping = tutorial?.mapping ?? DEFAULT_MAPPING;
+  const startSummary = tutorial?.summary ?? DEFAULT_SUMMARY;
   const aliveRef = useRef(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const rackRef = useRef<Rack | null>(null);
   const [rack, setRack] = useState<Rack | null>(null);
   const [audio, setAudio] = useState<AudioState>("off");
   const [source, setSource] = useState<SourceKind>("loop");
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
-  const [bypassed, setBypassed] = useState<ReadonlySet<EffectId>>(() => new Set(initialBypassed.filter((id) => modules.includes(id))));
+  const [bypassed, setBypassed] = useState<ReadonlySet<EffectId>>(
+    () => new Set(tutorial ? [] : initialBypassed.filter((id) => modules.includes(id))),
+  );
   const [division, setDivision] = useState<Division | null>(null);
   const [dryHeld, setDryHeld] = useState(false);
   const [camera, setCamera] = useState<CameraStatus>("off");
   const [inputMode, setInputMode] = useState<InputMode>("fake");
   const [fakeValues, setFakeValues] = useState<Record<Gesture, number>>({ pinch_left: 0.8, pinch_right: 0.3 });
   const [trackedValues, setTrackedValues] = useState<GestureValues>({ pinch_left: null, pinch_right: null });
-  const [mapping, setMapping] = useState<Mapping>(DEFAULT_MAPPING);
-  const [summary, setSummary] = useState(DEFAULT_SUMMARY);
+  const [mapping, setMapping] = useState<Mapping>(startMapping);
+  const [summary, setSummary] = useState(startSummary);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [presetsLoaded, setPresetsLoaded] = useState<ReadonlySet<string>>(new Set());
+  const [bypassToggled, setBypassToggled] = useState<ReadonlySet<string>>(new Set());
+  const [abUsed, setAbUsed] = useState(false);
+  const [asked, setAsked] = useState(false);
   const [params, setParams] = useState<Record<string, number>>(() => defaultValuesFor(modules));
   const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
@@ -84,6 +103,8 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
   }, []);
 
   useEffect(() => {
+    // Tutorials always start from the lesson's mapping.
+    if (tutorial) return;
     // Restore the producer's last approved mapping, if the database has one.
     fetch("/api/mappings", { headers: ownerHeaders(), signal: AbortSignal.timeout(5000) })
       .then((r) => (r.ok ? r.json() : null))
@@ -95,7 +116,7 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
         }
       })
       .catch(() => {});
-  }, [modules]);
+  }, [modules, tutorial]);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -157,6 +178,7 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
 
   const changeBypass = useCallback((id: EffectId, off: boolean) => {
     rackRef.current?.setBypassed(id, off);
+    setBypassToggled((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     setBypassed((prev) => {
       const next = new Set(prev);
       if (off) next.add(id);
@@ -174,6 +196,7 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
   const changeDryHeld = useCallback((held: boolean) => {
     rackRef.current?.setDryHeld(held);
     setDryHeld(held);
+    if (held) setAbUsed(true);
   }, []);
 
   const setAudioStopped = useCallback((next: boolean) => {
@@ -232,6 +255,24 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
     [changeBypass],
   );
 
+  const loadPreset = useCallback(
+    (p: Preset) => {
+      const r = rackRef.current;
+      const applied: Record<string, number> = {};
+      for (const [key, value] of Object.entries(p.values)) {
+        const [plugin, param] = key.split(".");
+        applied[key] = r ? r.setParam(plugin, param, value) : value;
+      }
+      if (modules.includes("delay")) changeDivision(p.division);
+      setParams((prev) => ({ ...prev, ...applied }));
+      setMapping(p.mapping);
+      setSummary(p.summary);
+      setActivePreset(p.id);
+      setPresetsLoaded((prev) => new Set(prev).add(p.id));
+    },
+    [changeDivision, modules],
+  );
+
   const changeConsent = useCallback((v: boolean) => {
     consentStore.set(v);
     fetch("/api/profile", {
@@ -255,9 +296,12 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
     return out;
   }, [mapping, params]);
 
+  const signals: CoachSignals = { audioOn: audio === "on", abUsed, params, division, presetsLoaded, bypassToggled, asked };
+
   return (
-    <div className="flex h-dvh flex-col">
+    <div ref={rootRef} className="flex h-dvh flex-col">
       <TopBar
+        lesson={tutorial ? { number: tutorial.number, title: tutorial.title } : undefined}
         audio={audio}
         onStartAudio={startAudio}
         stopped={stopped}
@@ -292,10 +336,17 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
             modules={modules}
             activeSummary={summary}
             onApprove={approve}
-            onResetDefault={() => (setMapping(DEFAULT_MAPPING), setSummary(DEFAULT_SUMMARY))}
+            onResetDefault={() => {
+              setMapping(startMapping);
+              setSummary(startSummary);
+              setActivePreset(null);
+            }}
+            lesson={tutorial ? { slug: tutorial.slug, asks: tutorial.asks, tries: tutorial.tries } : undefined}
+            onAsked={() => setAsked(true)}
           />
         </div>
         <div className="order-1 flex flex-col xl:min-h-0 gap-4 lg:col-start-1 lg:row-start-1 xl:col-start-2 xl:overflow-y-auto">
+          {tutorial && <PresetBar presets={tutorial.presets} activeId={activePreset} onLoad={loadPreset} />}
           <Stage
             inputMode={inputMode}
             onInputModeChange={setInputMode}
@@ -325,6 +376,7 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
           />
         </div>
       </main>
+      {tutorial && <TutorialCoach tutorial={tutorial} signals={signals} rootRef={rootRef} />}
     </div>
   );
 }

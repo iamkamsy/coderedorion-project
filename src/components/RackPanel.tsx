@@ -246,7 +246,7 @@ function OutputMeter({ rack }: { rack: Rack | null }) {
   }, [rack]);
 
   return (
-    <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+    <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4" data-tour="output-meter">
       <div className="mb-2 flex items-center justify-between text-sm">
         <span className="font-semibold tracking-wide text-muted uppercase">Output</span>
         <span

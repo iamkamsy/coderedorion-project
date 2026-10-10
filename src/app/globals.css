@@ -52,3 +52,11 @@ input[type="range"].cool {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Tutorial coach: the control the current step points at. */
+[data-tour-active] {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+  transition: outline-color 0.2s;
+}

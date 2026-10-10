@@ -18,6 +18,8 @@ interface Props {
   dataConsent: boolean;
   onConsentChange: (v: boolean) => void;
   dbStatus: BatcherStatus;
+  /** Set inside a tutorial playground. */
+  lesson?: { number: number; title: string };
 }
 
 const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
@@ -40,14 +42,28 @@ export function TopBar({
   dataConsent,
   onConsentChange,
   dbStatus,
+  lesson,
 }: Props) {
   const cam = CAMERA_LABEL[camera];
   return (
     <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-5 py-3">
-      <div className="flex items-baseline gap-2">
-        <span className="text-lg font-semibold tracking-tight">Gesture Rack</span>
-        <span className="hidden text-xs text-muted sm:inline">shape your sound with your hands</span>
-      </div>
+      {lesson ? (
+        <nav className="flex items-baseline gap-2" aria-label="Breadcrumb">
+          <Link href="/learn" className="text-sm text-muted hover:text-text">
+            ← Lessons
+          </Link>
+          <span className="text-lg font-semibold tracking-tight">
+            <span className="text-muted">{lesson.number}.</span> {lesson.title}
+          </span>
+        </nav>
+      ) : (
+        <div className="flex items-baseline gap-2">
+          <Link href="/" className="text-lg font-semibold tracking-tight">
+            Gesture Rack
+          </Link>
+          <span className="hidden text-xs text-muted sm:inline">shape your sound with your hands</span>
+        </div>
+      )}
 
       <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
         <span className="flex items-center gap-2 text-muted">
@@ -85,6 +101,15 @@ export function TopBar({
           Share data
         </label>
 
+        {lesson ? (
+          <Link href="/" className="text-muted hover:text-text">
+            Free play
+          </Link>
+        ) : (
+          <Link href="/learn" className="font-medium text-accent hover:text-text">
+            Learn
+          </Link>
+        )}
         <Link href="/dashboard" className="text-muted hover:text-text">
           Dashboard
         </Link>
@@ -103,6 +128,7 @@ export function TopBar({
           <button
             type="button"
             onClick={onStartAudio}
+            data-tour="start-audio"
             disabled={audio === "starting"}
             className="rounded-lg bg-accent px-4 py-1.5 font-medium text-bg disabled:cursor-default"
           >

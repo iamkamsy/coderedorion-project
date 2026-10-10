@@ -19,25 +19,55 @@ interface Message {
   text: string;
 }
 
-const PRESETS = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+
+type Mode = "ask" | "map";
 
 interface Props {
   modules: readonly EffectId[];
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
+  /** In a tutorial: questions to suggest, and the lesson the answers are about. */
+  lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
+  onAsked?: () => void;
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, lesson, onAsked }: Props) {
+  // The studio only changes the sound; a tutorial starts on questions.
+  const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
 
-  const submit = async (intent: string) => {
-    const text = intent.trim();
+  const ask = async (question: string) => {
+    setMessages((m) => [...m, { role: "user", text: question }]);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/explain", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ question, tutorial: lesson?.slug }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "The AI could not answer right now.");
+      setMessages((m) => [...m, { role: "assistant", text: String(data.answer) }]);
+      onAsked?.();
+    } catch (err) {
+      const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
+      setMessages((m) => [...m, { role: "error", text: `${msg} The lesson keeps working without it.` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = async (raw: string, as: Mode = mode) => {
+    const text = raw.trim();
     if (!text || loading) return;
     setInput("");
+    if (as === "ask") return ask(text);
     setProposal(null);
     setMessages((m) => [...m, { role: "user", text }]);
     setLoading(true);
@@ -63,7 +93,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
   };
 
   return (
-    <aside className="flex flex-1 flex-col gap-3 xl:min-h-0" aria-label="Assistant">
+    <aside className="flex flex-1 flex-col gap-3 xl:min-h-0" aria-label="Assistant" data-tour="assistant">
       <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
@@ -77,7 +107,11 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
       <div className="flex flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel xl:min-h-0">
         <div className="flex min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-4" aria-live="polite">
           {messages.length === 0 && (
-            <p className="text-sm text-muted">Tell the rack what you want to hear. The AI proposes which parameters your pinch controls.</p>
+            <p className="text-sm text-muted">
+              {mode === "ask"
+                ? "Ask anything about what you're hearing. Answers use the effects in this rack."
+                : "Tell the rack what you want to hear. The AI proposes which parameters your pinch controls."}
+            </p>
           )}
           {messages.map((m, i) => (
             <p
@@ -93,7 +127,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
               {m.text}
             </p>
           ))}
-          {loading && <p className="text-sm text-muted">Thinking about your sound...</p>}
+          {loading && <p className="text-sm text-muted">{mode === "ask" ? "Thinking it through..." : "Thinking about your sound..."}</p>}
           {proposal && (
             <MappingCard
               proposal={proposal}
@@ -110,8 +144,29 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
           )}
         </div>
 
-        <div className="flex flex-wrap gap-1.5 border-t border-border px-4 pt-3">
-          {PRESETS.map((p) => (
+        {lesson && (
+          <div className="flex border-t border-border px-4 pt-3" role="tablist" aria-label="Assistant mode">
+            {(
+              [
+                ["ask", "Ask a question"],
+                ["map", "Change the sound"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`flex-1 border-b-2 pb-1.5 text-xs font-medium ${mode === m ? "border-accent text-text" : "border-transparent text-muted hover:text-text"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-1.5 border-t border-border px-4 pt-3" data-tour="ask-chips">
+          {(mode === "ask" ? (lesson?.asks ?? []) : (lesson?.tries ?? STUDIO_TRIES)).map((p) => (
             <button
               key={p}
               type="button"
@@ -133,7 +188,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Make the vocals dreamier..."
+            placeholder={mode === "ask" ? "Why does feedback build up?" : "Make the vocals dreamier..."}
             maxLength={500}
             className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm placeholder:text-muted focus:border-accent/60 focus:outline-none"
           />
