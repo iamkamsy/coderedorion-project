@@ -61,7 +61,15 @@ Open <http://localhost:3000> in **Chrome**. Click **Start audio**, then either:
 - click **Enable camera** and pinch thumb and index finger in front of the webcam, or
 - drag up and down on the stage (or use the **Fake pinch** sliders) if you have no camera.
 
-Use headphones, especially with the microphone source.
+**Stop audio** in the top bar (or **Esc** anywhere) fades the output to silence in about 50 ms. Tracking and inputs keep running, so **Resume audio** brings the sound back instantly.
+
+Use headphones, especially with a live source. The audio source menu has three options:
+
+- **Test loop**: built-in synth, no input needed.
+- **Vocal mic**: browser noise suppression on, 100 Hz low cut, and a noise gate. Use a close headset mic in noisy rooms. The gate only mutes the gaps between phrases; it cannot remove loud music _while_ you sing.
+- **Instrument / line in**: raw signal (no suppression, so the tone survives) with a 40 Hz low cut. Use an audio interface for guitar.
+
+The rack's **Input** module sets the low cut and gate threshold, and shows whether the gate is open. Plans for separate voice-command and instrument inputs are in [`docs/plans/dual-input.md`](docs/plans/dual-input.md).
 
 ### 5. Set up the database (DevOps, once per database)
 

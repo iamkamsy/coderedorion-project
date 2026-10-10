@@ -61,7 +61,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
   };
 
   return (
-    <aside className="flex min-h-0 flex-col gap-3" aria-label="Assistant">
+    <aside className="flex flex-1 flex-col gap-3 xl:min-h-0" aria-label="Assistant">
       <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
@@ -72,7 +72,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
         <p className="mt-2 text-sm">{activeSummary}</p>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel">
+      <div className="flex flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel xl:min-h-0">
         <div className="flex min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-4" aria-live="polite">
           {messages.length === 0 && (
             <p className="text-sm text-muted">Tell the rack what you want to hear. The AI proposes which parameters your pinch controls.</p>
