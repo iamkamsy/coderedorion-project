@@ -11,7 +11,7 @@ export interface Calibration {
   open: number;
 }
 
-export const DEFAULT_CALIBRATION: Calibration = { closed: 0.15, open: 1.2 };
+export const DEFAULT_CALIBRATION: Calibration = { closed: 0.20, open: 1.1 };
 
 const WRIST = 0;
 const THUMB_TIP = 4;
