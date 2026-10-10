@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
 import type { Rack } from "@/audio/rack";
 import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
-import { STUDIO_MODULES, defaultValuesFor, type EffectId } from "@/audio/rackSpec";
+import { STUDIO_BYPASSED, STUDIO_MODULES, defaultValuesFor, isEffectId, type Division, type EffectId } from "@/audio/rackSpec";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
 import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
 import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
@@ -45,6 +45,8 @@ const consentStore = {
 interface StudioProps {
   /** Effects this rack loads. Mappings are limited to them. */
   modules?: readonly EffectId[];
+  /** Effects that start bypassed. */
+  initialBypassed?: readonly EffectId[];
 }
 
 /**
@@ -52,7 +54,7 @@ interface StudioProps {
  * Unmounting releases all of it, so mount a new instance (for example with a `key`)
  * to start a fresh, isolated session.
  */
-export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
+export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPASSED }: StudioProps) {
   const aliveRef = useRef(false);
   const rackRef = useRef<Rack | null>(null);
   const [rack, setRack] = useState<Rack | null>(null);
@@ -60,6 +62,9 @@ export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
   const [source, setSource] = useState<SourceKind>("loop");
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
+  const [bypassed, setBypassed] = useState<ReadonlySet<EffectId>>(() => new Set(initialBypassed.filter((id) => modules.includes(id))));
+  const [division, setDivision] = useState<Division | null>(null);
+  const [dryHeld, setDryHeld] = useState(false);
   const [camera, setCamera] = useState<CameraStatus>("off");
   const [inputMode, setInputMode] = useState<InputMode>("fake");
   const [fakeValues, setFakeValues] = useState<Record<Gesture, number>>({ pinch_left: 0.8, pinch_right: 0.3 });
@@ -121,7 +126,7 @@ export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
     setAudio("starting");
     try {
       const { Rack } = await import("@/audio/rack");
-      const r = await Rack.start({ modules });
+      const r = await Rack.start({ modules, bypassed: [...bypassed], delayDivision: division });
       // Left this session while audio was starting: release the rack instead of leaking it.
       if (!aliveRef.current) {
         r.dispose();
@@ -148,7 +153,28 @@ export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
     } catch {
       setAudio("error");
     }
-  }, [modules, params, source]);
+  }, [bypassed, division, modules, params, source]);
+
+  const changeBypass = useCallback((id: EffectId, off: boolean) => {
+    rackRef.current?.setBypassed(id, off);
+    setBypassed((prev) => {
+      const next = new Set(prev);
+      if (off) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const changeDivision = useCallback((d: Division | null) => {
+    setDivision(d);
+    const seconds = rackRef.current?.setDelayDivision(d);
+    if (seconds !== undefined && Number.isFinite(seconds)) setParams((prev) => ({ ...prev, "delay.delayTime": seconds }));
+  }, []);
+
+  const changeDryHeld = useCallback((held: boolean) => {
+    rackRef.current?.setDryHeld(held);
+    setDryHeld(held);
+  }, []);
 
   const setAudioStopped = useCallback((next: boolean) => {
     const r = rackRef.current;
@@ -190,16 +216,21 @@ export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
     if (rackRef.current) batcherRef.current?.push([{ plugin, param, value: safe, gesture: null }]);
   }, []);
 
-  const approve = useCallback((p: Proposal) => {
-    setMapping(p.mapping);
-    setSummary(p.summary);
-    fetch("/api/mappings", {
-      method: "POST",
-      headers: ownerHeaders(),
-      body: JSON.stringify({ name: p.summary.slice(0, 120) || p.intent, intent: p.intent, mapping: p.mapping }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => {});
-  }, []);
+  const approve = useCallback(
+    (p: Proposal) => {
+      setMapping(p.mapping);
+      setSummary(p.summary);
+      // A mapping on a bypassed effect would do nothing audible, so switch those effects on.
+      for (const m of p.mapping.mappings) for (const t of m.targets) if (isEffectId(t.plugin)) changeBypass(t.plugin, false);
+      fetch("/api/mappings", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ name: p.summary.slice(0, 120) || p.intent, intent: p.intent, mapping: p.mapping }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    },
+    [changeBypass],
+  );
 
   const changeConsent = useCallback((v: boolean) => {
     consentStore.set(v);
@@ -278,7 +309,20 @@ export function Studio({ modules = STUDIO_MODULES }: StudioProps) {
           <Spectrum rack={rack} />
         </div>
         <div className="order-3 flex flex-col xl:min-h-0 lg:col-start-2 lg:row-span-2 lg:row-start-1 xl:col-start-3 xl:row-span-1">
-          <RackPanel modules={modules} values={params} bound={bound} onManualChange={manualChange} rack={rack} />
+          <RackPanel
+            modules={modules}
+            values={params}
+            bound={bound}
+            onManualChange={manualChange}
+            rack={rack}
+            showInput={isLiveSource(source)}
+            bypassed={bypassed}
+            onBypassChange={changeBypass}
+            division={division}
+            onDivisionChange={changeDivision}
+            dryHeld={dryHeld}
+            onDryHeldChange={changeDryHeld}
+          />
         </div>
       </main>
     </div>

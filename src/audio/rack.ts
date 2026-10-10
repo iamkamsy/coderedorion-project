@@ -2,7 +2,7 @@ import * as Tone from "tone";
 import { LIVE_SOURCES, isLiveSource, type SourceKind } from "./inputs";
 import { createModule, type EffectModule } from "./modules";
 import { clampToSchema, getParamSpec, paramKey } from "./paramSchema";
-import { STUDIO_MODULES, defaultValuesFor, orderModules, type EffectId } from "./rackSpec";
+import { STUDIO_MODULES, defaultValuesFor, divisionSeconds, orderModules, type Division, type EffectId } from "./rackSpec";
 
 export type { SourceKind };
 
@@ -10,17 +10,36 @@ const RAMP_SECONDS = 0.05;
 const LIMITER_THRESHOLD_DB = -6;
 /** Fade time for stop and resume, long enough to avoid a click. */
 const STOP_RAMP_SECONDS = 0.05;
+/** Crossfade time for bypass and A/B, short enough to feel instant, long enough not to click. */
+const SWITCH_RAMP_SECONDS = 0.03;
 export const LOOP_BPM = 96;
 
 export interface RackOptions {
   /** Effects to load. Always chained in signal order. Defaults to the full studio. */
   modules?: readonly EffectId[];
+  /** Effects that start bypassed. */
+  bypassed?: readonly EffectId[];
+  /** Start the delay locked to this note division. */
+  delayDivision?: Division | null;
+}
+
+/** An effect wrapped in a dry/wet crossfade so it can be bypassed without a click. */
+interface Slot {
+  effect: EffectModule;
+  input: Tone.Gain;
+  wet: Tone.Gain;
+  dry: Tone.Gain;
+  output: Tone.Gain;
+  bypassed: boolean;
 }
 
 /**
  * Live input -> Low cut -> Gate --+
- *                                 +-> [effect modules in signal order] -> Master -> Limiter -> speakers.
- * Test loop ----------------------+
+ *                                 +-> Input --> [effect slots in signal order] -> Wet bus --+
+ * Test loop ----------------------+          \-------------------------------> Dry bus --+-> Master -> Limiter -> speakers
+ *
+ * Each effect slot crossfades between the effect and a dry path (bypass). The wet and
+ * dry buses crossfade the whole chain (A/B: hold to hear the unprocessed sound).
  *
  * Each rack owns every node, timer and stream it creates, and dispose() releases all of
  * them and resets Tone's page-wide Transport, so nothing carries over to the next rack.
@@ -32,7 +51,11 @@ export class Rack {
   readonly modules: readonly EffectId[];
   readonly values: Record<string, number>;
 
-  private effects = new Map<EffectId, EffectModule>();
+  private slots = new Map<EffectId, Slot>();
+  private wetBus: Tone.Gain;
+  private dryBus: Tone.Gain;
+  private dryHeld = false;
+  private delayDivision: Division | null = null;
   private master: Tone.Gain;
   private limiter: Tone.Limiter;
   private stopped = false;
@@ -57,7 +80,7 @@ export class Rack {
   private lastApplied = new Map<string, number>();
   private pending = new Map<string, ReturnType<typeof setTimeout>>();
 
-  private constructor(modules: readonly EffectId[]) {
+  private constructor(modules: readonly EffectId[], bypassed: readonly EffectId[]) {
     this.modules = orderModules(modules);
     this.values = defaultValuesFor(this.modules);
     const v = this.values;
@@ -72,18 +95,35 @@ export class Rack {
     this.preMeter = new Tone.Meter({ smoothing: 0.8 });
     this.postMeter = new Tone.Meter({ smoothing: 0.8 });
     this.fft = new Tone.FFT(256);
+    this.wetBus = new Tone.Gain(1);
+    this.dryBus = new Tone.Gain(0);
 
     this.liveIn.chain(this.lowCut, this.gate, this.input);
     this.lowCut.connect(this.gateMeter);
 
     let tail: Tone.ToneAudioNode = this.input;
     for (const id of this.modules) {
-      const effect = createModule(id, v);
-      this.effects.set(id, effect);
-      tail.connect(effect.input);
-      tail = effect.output;
+      const off = bypassed.includes(id);
+      const slot: Slot = {
+        effect: createModule(id, v),
+        input: new Tone.Gain(1),
+        wet: new Tone.Gain(off ? 0 : 1),
+        dry: new Tone.Gain(off ? 1 : 0),
+        output: new Tone.Gain(1),
+        bypassed: off,
+      };
+      slot.input.connect(slot.effect.input);
+      slot.effect.output.chain(slot.wet, slot.output);
+      slot.input.chain(slot.dry, slot.output);
+      this.slots.set(id, slot);
+      tail.connect(slot.input);
+      tail = slot.output;
     }
-    tail.chain(this.master, this.limiter, Tone.getDestination());
+    tail.connect(this.wetBus);
+    this.input.connect(this.dryBus);
+    this.wetBus.connect(this.master);
+    this.dryBus.connect(this.master);
+    this.master.chain(this.limiter, Tone.getDestination());
     this.master.connect(this.preMeter);
     this.limiter.connect(this.postMeter);
     this.limiter.connect(this.fft);
@@ -91,8 +131,9 @@ export class Rack {
 
   static async start(options: RackOptions = {}): Promise<Rack> {
     await Tone.start();
-    const rack = new Rack(options.modules ?? STUDIO_MODULES);
-    await Promise.all([...rack.effects.values()].map((m) => m.ready));
+    const rack = new Rack(options.modules ?? STUDIO_MODULES, options.bypassed ?? []);
+    await Promise.all([...rack.slots.values()].map((s) => s.effect.ready));
+    if (options.delayDivision) rack.setDelayDivision(options.delayDivision);
     return rack;
   }
 
@@ -106,6 +147,8 @@ export class Rack {
     const key = paramKey(plugin, param);
     const spec = getParamSpec(plugin, param);
     if (!spec || this.disposed || !this.hasParam(plugin, param)) return NaN;
+    // While the delay is locked to a division, its time follows the tempo, not gestures or sliders.
+    if (key === "delay.delayTime" && this.delayDivision) return this.values[key];
     const safe = clampToSchema(plugin, param, value);
     this.values[key] = safe;
 
@@ -138,7 +181,48 @@ export class Rack {
       if (param === "gateThreshold") this.gate.threshold = value;
       return;
     }
-    this.effects.get(plugin as EffectId)?.apply(param, value);
+    this.slots.get(plugin as EffectId)?.effect.apply(param, value);
+  }
+
+  /** Crossfade an effect out of (or back into) the chain. */
+  setBypassed(id: EffectId, bypassed: boolean) {
+    const slot = this.slots.get(id);
+    if (!slot || this.disposed) return;
+    slot.bypassed = bypassed;
+    slot.wet.gain.rampTo(bypassed ? 0 : 1, SWITCH_RAMP_SECONDS);
+    slot.dry.gain.rampTo(bypassed ? 1 : 0, SWITCH_RAMP_SECONDS);
+  }
+
+  isBypassed(id: EffectId): boolean {
+    return this.slots.get(id)?.bypassed ?? true;
+  }
+
+  /** A/B: while held, hear the input with no effects. The limiter still applies. */
+  setDryHeld(held: boolean) {
+    if (this.disposed) return;
+    this.dryHeld = held;
+    this.wetBus.gain.rampTo(held ? 0 : 1, SWITCH_RAMP_SECONDS);
+    this.dryBus.gain.rampTo(held ? 1 : 0, SWITCH_RAMP_SECONDS);
+  }
+
+  isDryHeld(): boolean {
+    return this.dryHeld;
+  }
+
+  /** Lock the delay time to a note division at the loop tempo, or unlock it (null). Returns the delay time. */
+  setDelayDivision(division: Division | null): number {
+    if (this.disposed || !this.slots.has("delay")) return NaN;
+    this.delayDivision = division;
+    if (division) {
+      const seconds = divisionSeconds(division, LOOP_BPM);
+      this.values["delay.delayTime"] = seconds;
+      this.applyNow("delay", "delayTime", seconds);
+    }
+    return this.values["delay.delayTime"];
+  }
+
+  getDelayDivision(): Division | null {
+    return this.delayDivision;
   }
 
   /** Switch the source. Live sources open the mic with constraints suited to voice or instrument. */
@@ -242,14 +326,19 @@ export class Rack {
     this.stopSources();
     this.pending.forEach(clearTimeout);
     this.pending.clear();
-    this.effects.forEach((m) => m.dispose());
-    this.effects.clear();
+    this.slots.forEach((slot) => {
+      slot.effect.dispose();
+      [slot.input, slot.wet, slot.dry, slot.output].forEach((n) => n.dispose());
+    });
+    this.slots.clear();
     [
       this.liveIn,
       this.lowCut,
       this.gate,
       this.gateMeter,
       this.input,
+      this.wetBus,
+      this.dryBus,
       this.master,
       this.limiter,
       this.preMeter,
