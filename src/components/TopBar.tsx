@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { SourceKind } from "@/audio/rack";
+import { SOURCE_LABEL, type SourceKind } from "@/audio/inputs";
 import type { BatcherStatus } from "@/lib/eventBatcher";
 import type { CameraStatus } from "./Stage";
 
@@ -52,8 +52,11 @@ export function TopBar({ audio, onStartAudio, source, onSourceChange, camera, da
           className="rounded-lg border border-border bg-panel px-2 py-1.5 text-sm"
           aria-label="Audio source"
         >
-          <option value="loop">Test loop</option>
-          <option value="mic">Microphone (use headphones)</option>
+          {(Object.keys(SOURCE_LABEL) as SourceKind[]).map((k) => (
+            <option key={k} value={k}>
+              {SOURCE_LABEL[k]}
+            </option>
+          ))}
         </select>
 
         <label

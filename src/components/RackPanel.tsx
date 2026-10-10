@@ -15,10 +15,13 @@ interface Props {
 
 export function RackPanel({ values, bound, onManualChange, rack }: Props) {
   return (
-    <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto" aria-label="Effects rack">
+    <aside className="flex flex-col gap-3 xl:min-h-0 xl:overflow-y-auto" aria-label="Effects rack">
       {PLUGINS.map((plugin) => (
         <div key={plugin.id} className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
-          <h2 className="mb-3 text-sm font-semibold tracking-wide text-muted uppercase">{plugin.label}</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">{plugin.label}</h2>
+            {plugin.id === "input" && <GateLight rack={rack} />}
+          </div>
           <div className="flex flex-col gap-3">
             {specsForPlugin(plugin.id).map((spec) => {
               const key = paramKey(spec.plugin, spec.param);
@@ -65,6 +68,34 @@ export function RackPanel({ values, bound, onManualChange, rack }: Props) {
       ))}
       <OutputMeter rack={rack} />
     </aside>
+  );
+}
+
+function GateLight({ rack }: { rack: Rack | null }) {
+  const [open, setOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!rack) return;
+    let raf = 0;
+    let last: boolean | null = null;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const next = rack.isGateOpen();
+      if (next !== last) setOpen((last = next));
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [rack]);
+
+  const live = rack !== null && open !== null;
+  return (
+    <span
+      className={`flex items-center gap-1.5 text-[11px] ${live ? "text-muted" : "text-muted/60"}`}
+      title="Low cut and gate apply to the vocal mic and instrument input, not the test loop"
+    >
+      <span className={`size-2 rounded-full ${live && open ? "bg-cool" : "bg-border"}`} />
+      {live ? (open ? "Gate open" : "Gate closed") : "Live input only"}
+    </span>
   );
 }
 
