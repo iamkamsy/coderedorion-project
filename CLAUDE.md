@@ -6,9 +6,13 @@ Hackathon: CodeRED Orion, Houston. Submission deadline: **Sunday Oct 11, 12:00 n
 
 ## 1. Product in one paragraph
 
-Gesture Rack lets a bedroom producer or engineer shape their sound with their hands. A Logitech webcam tracks the hands in the browser. Pinching the thumb and index finger, and opening or closing them, drives audio effect parameters (for example reverb wet/mix and delay feedback) at the same time. The user decides what each gesture controls by typing or speaking an intent ("make the vocals dreamier"). Gemini turns that intent into a validated parameter mapping, and an ElevenLabs voice agent lets them do it hands-free. Backboard.io remembers each producer's taste and past mappings. Every parameter change streams into TigerData as time series. With explicit opt-in, we also store the semantic meaning of what an effect did, as the seed of a dataset for learning parameter semantics and constraints later.
+Gesture Rack teaches beginner producers how audio effects work by letting them shape sound with their hands. A Logitech webcam tracks the hands in the browser. Pinching the thumb and index finger, and opening or closing them, drives audio effect parameters (for example reverb wet/mix and delay feedback) at the same time. The user decides what each gesture controls by typing or speaking an intent ("make the vocals dreamier"). Gemini turns that intent into a validated parameter mapping, and an ElevenLabs voice agent lets them do it hands-free. Backboard.io remembers each producer's taste and past mappings. Every parameter change streams into TigerData as time series. With explicit opt-in, we also store the semantic meaning of what an effect did, as the seed of a dataset for learning parameter semantics and constraints later.
 
-Problem statement: producers spend hours dialing effects to sound right. We give them their hands, plus an AI that understands what they mean.
+Bite-sized tutorials (`/learn`) each load a small playground rack with only the effects being taught, presets, and step pop-ups ("pinch to raise feedback", "ask why dub echoes get darker"). The full studio (`/`) stays available for free play. See `docs/plans/tutorials.md`.
+
+Audience: beginner producers who have not used effect plugins much and want the intuition behind them.
+
+Problem statement: beginners face walls of knobs with no idea what each one does, and spend hours dialing effects to sound right. We give them their hands, an AI that understands what they mean and explains why, and short guided lessons.
 
 Audience for the demo: judges walking up to a laptop. A pinch must audibly change the sound within 30 seconds of arriving.
 
@@ -128,6 +132,8 @@ All tables carry audit columns: `created_at`, `updated_at` (trigger-maintained),
 - `profiles`: `owner_id`, display name, `data_consent` boolean (default false), `consented_at`.
 - `mappings`: `owner_id`, name, mapping JSON (JSONB), `is_active`.
 - `param_events`: **hypertable** on `time`. Columns: `time`, `owner_id`, `session_id`, `plugin`, `param`, `value`, `gesture`. Insert in batches.
+- `tutorial_sessions`: one row per tutorial visit. `id` is the client session id, plus `owner_id`, `tutorial_id`, `started_at`, `ended_at`, `completed_steps`.
+- `ingest_batches`: one row per uploaded event batch (`batch_id`, `session_id`, `event_count`), written in the same transaction as its events so retried batches are ignored.
 - `semantic_notes`: opt-in only. `owner_id`, `plugin`, `param`, value range, user intent text, Gemini description, tags.
 
 Continuous aggregates (build the dashboard on these):
@@ -184,8 +190,8 @@ Cut order if behind: Clerk, two-handed control, semantic notes, Web MIDI bridge,
 
 ## 12. MVP scope
 
-**Must ship:** canvas UI with camera and rack; pinch driving parameters; three effects with limiter; Gemini mapping from chat; event stream into TigerData with a basic dashboard.
-**Should ship:** ElevenLabs voice; Backboard memory; two-handed control; saved mappings.
+**Must ship:** canvas UI with camera and rack; pinch driving parameters; three effects with limiter; Gemini mapping from chat; event stream into TigerData with a basic dashboard; tutorial 1 ("Echoes in time") end to end.
+**Should ship:** ElevenLabs voice; Backboard memory; two-handed control; saved mappings; tutorials 2 and 3 polished past preview; queued event upload in a Web Worker.
 **Stretch:** Web MIDI bridge to send CC to a real DAW (Chrome, with a virtual MIDI port such as IAC on Mac or loopMIDI on Windows); opt-in semantic notes with Gemini audio analysis; Clerk auth.
 
 ## 13. Roles
