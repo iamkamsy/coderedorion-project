@@ -62,17 +62,7 @@ interface Props {
   tour?: { fallback: { mapping: Mapping; summary: string }; onApplied: () => void };
 }
 
-export function Assistant({
-  modules,
-  activeSummary,
-  onApprove,
-  onResetDefault,
-  mapping,
-  onToggleParam,
-  lesson,
-  onAsked,
-  tour,
-}: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked, tour }: Props) {
   // The studio only changes the sound; a lesson starts on questions.
   const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
