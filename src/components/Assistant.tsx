@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import { getParamSpec, specsForPlugin, PLUGINS } from "@/audio/paramSchema";
 import type { EffectId } from "@/audio/rackSpec";
-import type { Mapping } from "@/mapping/types";
+import { isTargetBound } from "@/mapping/engine";
+import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
@@ -28,12 +29,14 @@ interface Props {
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
+  mapping: Mapping;
+  onToggleParam: (gesture: Gesture, plugin: string, param: string) => void;
   /** In a lesson: questions to suggest, and the lesson the answers are about. */
   lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
   onAsked?: () => void;
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault, lesson, onAsked }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked }: Props) {
   // The studio only changes the sound; a lesson starts on questions.
   const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
@@ -104,6 +107,12 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
           </button>
         </div>
         <p className="mt-1 text-[13px] leading-snug">{activeSummary}</p>
+        <div className="mt-2 flex flex-col gap-1.5 border-t border-border pt-2">
+          <p className="text-[10px] text-muted">Choose what each hand controls:</p>
+          {GESTURES.map((g) => (
+            <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
+          ))}
+        </div>
       </div>
 
       <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
@@ -218,6 +227,47 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
         </form>
       </div>
     </aside>
+  );
+}
+
+function HandPicker({
+  gesture,
+  mapping,
+  modules,
+  onToggle,
+}: {
+  gesture: Gesture;
+  mapping: Mapping;
+  modules: readonly EffectId[];
+  onToggle: (gesture: Gesture, plugin: string, param: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[11px] font-medium text-muted">{GESTURE_LABEL[gesture]}</p>
+      <div className="flex flex-wrap gap-1" role="group" aria-label={`${GESTURE_LABEL[gesture]} targets`}>
+        {modules.flatMap((id) =>
+          specsForPlugin(id).map((spec) => {
+            const bound = isTargetBound(mapping, gesture, spec.plugin, spec.param);
+            const plugin = PLUGINS.find((p) => p.id === spec.plugin)?.label ?? spec.plugin;
+            return (
+              <button
+                key={`${spec.plugin}.${spec.param}`}
+                type="button"
+                onClick={() => onToggle(gesture, spec.plugin, spec.param)}
+                aria-pressed={bound}
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  bound
+                    ? "bg-accent/15 text-accent-text"
+                    : "border border-border text-muted hover:border-accent/60 hover:text-accent-text"
+                }`}
+              >
+                {plugin} {spec.label}
+              </button>
+            );
+          }),
+        )}
+      </div>
+    </div>
   );
 }
 

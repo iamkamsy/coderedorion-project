@@ -6,11 +6,11 @@ import type { Rack } from "@/audio/rack";
 import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
 import { STUDIO_BYPASSED, STUDIO_MODULES, defaultValuesFor, isEffectId, type Division, type EffectId } from "@/audio/rackSpec";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
-import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
+import { applyMapping, boundParams, computeChanges, toggleTarget } from "@/mapping/engine";
 import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
-import { formatParam } from "@/lib/format";
+import { formatParam, summarizeMapping } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { getTutorial, type Preset } from "@/tutorials";
 import type { CoachSignals } from "@/tutorials/checks";
@@ -297,6 +297,18 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     [changeBypass],
   );
 
+  // Hand-pick what a gesture controls. No-ops if it would remove the mapping's last target
+  // or exceed the per-gesture target limit; toggleTarget returns null in both cases.
+  const toggleParam = useCallback(
+    (gesture: Gesture, plugin: string, param: string) => {
+      const next = toggleTarget(mapping, gesture, plugin, param);
+      if (!next) return;
+      setMapping(next);
+      setSummary(summarizeMapping(next));
+    },
+    [mapping],
+  );
+
   const loadPreset = useCallback(
     (p: Preset) => {
       const r = rackRef.current;
@@ -366,6 +378,8 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
                 activeSummary={summary}
                 onApprove={approve}
                 onResetDefault={resetMapping}
+                mapping={mapping}
+                onToggleParam={toggleParam}
                 lesson={tutorial ? { slug: tutorial.slug, asks: tutorial.asks, tries: tutorial.tries } : undefined}
                 onAsked={() => setAsked(true)}
               />
