@@ -11,6 +11,7 @@ import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
 import { formatParam } from "@/lib/format";
+import { syncDefaultConsent } from "@/lib/consent";
 import { ownerHeaders } from "@/lib/ownerId";
 import { getTutorial, type Preset } from "@/tutorials";
 import type { CoachSignals } from "@/tutorials/checks";
@@ -25,29 +26,6 @@ import { Collapsible } from "./Collapsible";
 import { Landscape } from "./Landscape";
 
 const DEFAULT_SUMMARY = "Right pinch opens reverb and delay feedback together. Left pinch sweeps the filter.";
-const CONSENT_KEY = "gesture-rack.data-consent";
-
-const consentListeners = new Set<() => void>();
-const consentStore = {
-  subscribe(cb: () => void) {
-    consentListeners.add(cb);
-    return () => consentListeners.delete(cb);
-  },
-  get(): boolean {
-    try {
-      return localStorage.getItem(CONSENT_KEY) === "true";
-    } catch {
-      return false;
-    }
-  },
-  set(v: boolean) {
-    try {
-      localStorage.setItem(CONSENT_KEY, String(v));
-    } catch {}
-    consentListeners.forEach((cb) => cb());
-  },
-};
-
 const SURFACE_KEY = "gesture-rack.surface";
 
 const surfaceListeners = new Set<() => void>();
@@ -119,7 +97,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   const [abUsed, setAbUsed] = useState(false);
   const [asked, setAsked] = useState(false);
   const [params, setParams] = useState<Record<string, number>>(() => defaultValuesFor(modules));
-  const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
   const surface = useSyncExternalStore(surfaceStore.subscribe, surfaceStore.get, () => "tinted" as const);
   const [expanded, setExpanded] = useState(false);
@@ -154,6 +131,8 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
       })
       .catch(() => {});
   }, [modules, tutorial]);
+
+  useEffect(() => syncDefaultConsent(), []);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -315,16 +294,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     [changeDivision, modules],
   );
 
-  const changeConsent = useCallback((v: boolean) => {
-    consentStore.set(v);
-    fetch("/api/profile", {
-      method: "PUT",
-      headers: ownerHeaders(),
-      body: JSON.stringify({ dataConsent: v }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => {});
-  }, []);
-
   const chips = useMemo(() => {
     const out = { pinch_left: [] as Chip[], pinch_right: [] as Chip[] };
     for (const m of mapping.mappings) {
@@ -429,8 +398,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
         source={source}
         onSourceChange={changeSource}
         camera={camera}
-        dataConsent={dataConsent}
-        onConsentChange={changeConsent}
         dbStatus={dbStatus}
         surface={surface}
         onSurfaceChange={surfaceStore.set}

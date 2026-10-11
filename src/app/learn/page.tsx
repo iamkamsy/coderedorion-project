@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PLUGINS } from "@/audio/paramSchema";
+import { HomeButton } from "@/components/HomeButton";
 import { LessonBadge } from "@/components/LessonBadge";
 import { TUTORIALS } from "@/tutorials";
 
@@ -11,8 +12,14 @@ export const metadata: Metadata = {
 
 export default function LearnPage() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-6 sm:px-6">
+      <nav className="glass flex items-center justify-between rounded-2xl p-2 pl-2.5" aria-label="Main">
+        <HomeButton />
+        <Link href="/dashboard" className="press rounded-xl px-3 py-1.5 text-[13px] text-muted hover:text-text">
+          Dashboard
+        </Link>
+      </nav>
+      <header>
         <div>
           <p className="text-sm font-semibold text-accent-text">Learn</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">Hear what effects really do</h1>
@@ -21,9 +28,6 @@ export default function LearnPage() {
             with your hands.
           </p>
         </div>
-        <Link href="/" className="glass rounded-xl px-3.5 py-2 text-[13px] font-semibold">
-          Free play
-        </Link>
       </header>
 
       <ol className="grid gap-4 md:grid-cols-3">

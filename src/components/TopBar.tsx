@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { SOURCE_LABEL, type SourceKind } from "@/audio/inputs";
 import type { BatcherStatus } from "@/lib/eventBatcher";
-import { PinchGlyph } from "./PinchGlyph";
+import { HomeButton } from "./HomeButton";
 import type { CameraStatus } from "./Stage";
 
 export type AudioState = "off" | "starting" | "on" | "error";
@@ -28,8 +28,6 @@ interface Props {
   source: SourceKind;
   onSourceChange: (s: SourceKind) => void;
   camera: CameraStatus;
-  dataConsent: boolean;
-  onConsentChange: (v: boolean) => void;
   dbStatus: BatcherStatus;
   surface: SurfaceKind;
   onSurfaceChange: (surface: SurfaceKind) => void;
@@ -47,28 +45,12 @@ const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
 };
 
 export function TopBar(props: Props) {
-  const {
-    audio,
-    onStartAudio,
-    stopped,
-    onToggleStop,
-    source,
-    onSourceChange,
-    camera,
-    dataConsent,
-    onConsentChange,
-    dbStatus,
-    surface,
-    onSurfaceChange,
-    lesson,
-  } = props;
+  const { audio, onStartAudio, stopped, onToggleStop, source, onSourceChange, camera, dbStatus, surface, onSurfaceChange, lesson } = props;
   const cam = CAMERA_LABEL[camera];
   return (
     <header className="glass sticky top-3 z-30 mx-3 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl p-2 pl-2.5 sm:mx-4">
       <div className="flex items-center gap-2.5">
-        <span className="flex size-9 items-center justify-center rounded-[10px] bg-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]">
-          <PinchGlyph />
-        </span>
+        <HomeButton />
         {lesson ? (
           <nav className="flex items-baseline gap-2" aria-label="Breadcrumb">
             <Link href="/learn" className="text-[13px] text-muted hover:text-text">
@@ -79,9 +61,7 @@ export function TopBar(props: Props) {
             </span>
           </nav>
         ) : (
-          <Link href="/" className="text-[15px] font-semibold tracking-tight">
-            Gesture Rack
-          </Link>
+          <span className="text-[15px] font-semibold tracking-tight">Gesture Rack</span>
         )}
       </div>
 
@@ -99,29 +79,7 @@ export function TopBar(props: Props) {
 
         <Segmented label="Audio source" options={SOURCES} value={source} onChange={onSourceChange} />
 
-        <label
-          className="flex cursor-pointer items-center gap-2 text-muted"
-          title="Off by default. When on, your intent text and effect descriptions may be stored to improve mappings."
-        >
-          <input
-            type="checkbox"
-            role="switch"
-            checked={dataConsent}
-            onChange={(e) => onConsentChange(e.target.checked)}
-            className="peer sr-only"
-          />
-          <span
-            aria-hidden
-            className="relative h-5 w-9 shrink-0 rounded-full border border-border bg-black/10 transition-colors peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:top-0.5 after:left-0.5 after:size-3.5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"
-          />
-          Share data
-        </label>
-
-        {lesson ? (
-          <Link href="/" className="text-muted hover:text-text">
-            Free play
-          </Link>
-        ) : (
+        {!lesson && (
           <Link href="/learn" className="font-semibold text-accent-text hover:text-text">
             Learn
           </Link>
