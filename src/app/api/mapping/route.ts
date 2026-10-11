@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GeminiUnavailableError, proposeMapping } from "@/ai/gemini";
+import { GeminiBusyError, GeminiUnavailableError, proposeMapping } from "@/ai/gemini";
 import { EFFECT_ORDER, STUDIO_MODULES, orderModules } from "@/audio/rackSpec";
 import { jsonError } from "@/lib/requestOwner";
 
@@ -20,6 +20,8 @@ export async function POST(request: Request) {
     return Response.json(proposal);
   } catch (err) {
     if (err instanceof GeminiUnavailableError) return jsonError(503, "The AI service is not configured.");
+    if (err instanceof GeminiBusyError)
+      return jsonError(503, "Gemini is busy or rate limited right now. Try again in a moment. The current mapping is still live.");
     if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"))
       return jsonError(504, "The AI took too long. Try again.");
     return jsonError(502, err instanceof Error ? err.message : "The AI request failed.");

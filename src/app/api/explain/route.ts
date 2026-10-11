@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GeminiUnavailableError, explainConcept } from "@/ai/gemini";
+import { GeminiBusyError, GeminiUnavailableError, explainConcept } from "@/ai/gemini";
 import { STUDIO_MODULES } from "@/audio/rackSpec";
 import { jsonError } from "@/lib/requestOwner";
 import { getTutorial } from "@/tutorials";
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     return Response.json({ answer: await explainConcept(body.data.question, context) });
   } catch (err) {
     if (err instanceof GeminiUnavailableError) return jsonError(503, "The AI service is not configured.");
+    if (err instanceof GeminiBusyError) return jsonError(503, "Gemini is busy or rate limited right now. Try again in a moment.");
     if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"))
       return jsonError(504, "The AI took too long. Try again.");
     return jsonError(502, "The AI could not answer right now.");
