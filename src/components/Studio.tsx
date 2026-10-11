@@ -11,11 +11,12 @@ import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
 import { formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { Assistant, type Proposal } from "./Assistant";
-import { OutputMeter, RackPanel } from "./RackPanel";
+import { RackPanel } from "./RackPanel";
 import { Spectrum } from "./Spectrum";
 import { Stage, type CameraStatus, type Chip, type InputMode } from "./Stage";
-import { TopBar, type AudioState, type LayoutKind } from "./TopBar";
+import { TopBar, type AudioState, type SurfaceKind } from "./TopBar";
 import { Collapsible } from "./Collapsible";
+import { Landscape } from "./Landscape";
 
 const DEFAULT_SUMMARY = "Right pinch opens reverb and delay feedback together. Left pinch sweeps the filter.";
 const CONSENT_KEY = "gesture-rack.data-consent";
@@ -41,29 +42,31 @@ const consentStore = {
   },
 };
 
-const LAYOUT_KEY = "gesture-rack.layout";
+const SURFACE_KEY = "gesture-rack.surface";
 
-const layoutListeners = new Set<() => void>();
-const layoutStore = {
+const surfaceListeners = new Set<() => void>();
+const surfaceStore = {
   subscribe(cb: () => void) {
-    layoutListeners.add(cb);
-    return () => layoutListeners.delete(cb);
+    surfaceListeners.add(cb);
+    return () => surfaceListeners.delete(cb);
   },
-  get(): LayoutKind {
+  get(): SurfaceKind {
     try {
-      const v = localStorage.getItem(LAYOUT_KEY);
-      return v === "side" || v === "bottom" ? v : "original";
+      return localStorage.getItem(SURFACE_KEY) === "graphite" ? "graphite" : "tinted";
     } catch {
-      return "original";
+      return "tinted";
     }
   },
-  set(v: LayoutKind) {
+  set(v: SurfaceKind) {
     try {
-      localStorage.setItem(LAYOUT_KEY, v);
+      localStorage.setItem(SURFACE_KEY, v);
     } catch {}
-    layoutListeners.forEach((cb) => cb());
+    surfaceListeners.forEach((cb) => cb());
   },
 };
+
+/** Side boxes floating over the expanded camera, leaving room at the bottom for the pinch meters. */
+const OVERLAY = "fixed top-24 z-40 flex max-h-[calc(100dvh-180px)] flex-col gap-4 overflow-y-auto";
 
 export function Studio() {
   const rackRef = useRef<Rack | null>(null);
@@ -79,7 +82,15 @@ export function Studio() {
   const [params, setParams] = useState<Record<string, number>>(defaultParamValues);
   const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
-  const layout = useSyncExternalStore(layoutStore.subscribe, layoutStore.get, () => "original" as const);
+  const surface = useSyncExternalStore(surfaceStore.subscribe, surfaceStore.get, () => "tinted" as const);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setExpanded(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   const batcherRef = useRef<EventBatcher | null>(null);
   useEffect(() => {
@@ -193,88 +204,55 @@ export function Studio() {
 
   const resetMapping = () => (setMapping(DEFAULT_MAPPING), setSummary(DEFAULT_SUMMARY));
 
-  const stage = (
-    <Stage
-      inputMode={inputMode}
-      onInputModeChange={setInputMode}
-      onCameraStatus={setCamera}
-      onTracked={setTrackedValues}
-      fakeValues={fakeValues}
-      onFakeChange={(g, v) => setFakeValues((prev) => ({ ...prev, [g]: v }))}
-      values={gestureValues}
-      chips={chips}
-    />
-  );
-
-  const assistantBox = (
-    <section className="rounded-[var(--radius-panel)] glass" aria-label="AI assistant">
-      <Collapsible title="AI assistant" defaultOpen>
-        <Assistant activeSummary={summary} onApprove={approve} onResetDefault={resetMapping} embedded />
-      </Collapsible>
-    </section>
-  );
-
-  let body: React.ReactNode;
   // Three columns from xl up keep the camera centered on the page; below that the camera sits on top.
-  const threeColumns = "grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-[280px_minmax(0,1fr)_280px] xl:min-h-0 xl:flex-1";
-  const leftColumn = "order-2 flex flex-col gap-4 xl:order-none xl:col-start-1 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto";
-  const centerColumn =
-    "order-1 flex flex-col gap-4 lg:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto";
-  const rightColumn = "order-3 flex flex-col gap-4 xl:order-none xl:col-start-3 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto";
-
-  if (layout === "side") {
-    body = (
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden">
-        <div className={threeColumns}>
-          <div className={leftColumn}>{assistantBox}</div>
-          <div className={centerColumn}>
-            {stage}
-            <Spectrum rack={rack} />
-          </div>
-          <div className={rightColumn}>
-            <RackPanel values={params} bound={bound} onManualChange={manualChange} rack={rack} variant="accordion" />
-          </div>
+  const body = (
+    <main className={`surface-${surface} flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden`}>
+      {/* Expanded camera: a clean landscape fills the border around it, and the side boxes float over it. */}
+      {expanded && <Landscape id="expand" className="fixed inset-0 z-[25]" />}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:min-h-0 xl:flex-1 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+        <div
+          className={
+            expanded
+              ? `${OVERLAY} left-8 w-[300px]`
+              : "order-2 flex flex-col gap-4 xl:order-none xl:col-start-1 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+          }
+        >
+          <section className="rounded-[var(--radius-panel)] glass" aria-label="AI assistant">
+            <Collapsible title="AI assistant" defaultOpen>
+              <Assistant activeSummary={summary} onApprove={approve} onResetDefault={resetMapping} />
+            </Collapsible>
+          </section>
         </div>
-      </main>
-    );
-  } else if (layout === "bottom") {
-    body = (
-      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 xl:overflow-hidden">
-        <div className={threeColumns}>
-          <div className={leftColumn}>{assistantBox}</div>
-          <div className={centerColumn}>
-            {/* Cap the width so the 16:9 camera and its controls fit above the effects row. */}
-            <div className="w-full xl:mx-auto xl:max-w-[calc((100dvh-460px)*16/9)]">{stage}</div>
-          </div>
-          <div className={rightColumn}>
-            <section className="flex flex-col gap-3 rounded-[var(--radius-panel)] glass p-4" aria-label="Output">
-              <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Spectrum</h2>
-              <Spectrum rack={rack} />
-              <OutputMeter rack={rack} bare />
-            </section>
+        <div className="order-1 flex flex-col gap-4 lg:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto">
+          <Stage
+            inputMode={inputMode}
+            onInputModeChange={setInputMode}
+            onCameraStatus={setCamera}
+            onTracked={setTrackedValues}
+            fakeValues={fakeValues}
+            onFakeChange={(g, v) => setFakeValues((prev) => ({ ...prev, [g]: v }))}
+            values={gestureValues}
+            chips={chips}
+            expanded={expanded}
+            onToggleExpand={() => setExpanded((v) => !v)}
+          />
+          {/* Over the expanded camera, the spectrum floats as a slim bar beside the shrink button, clear of the pinch meters. */}
+          <div className={expanded ? "fixed right-[76px] bottom-7 z-40 w-[min(380px,calc(100vw-620px))]" : ""}>
+            <Spectrum rack={rack} floating={expanded} />
           </div>
         </div>
-        <div className="shrink-0">
-          <RackPanel values={params} bound={bound} onManualChange={manualChange} rack={rack} variant="row" withOutput={false} />
-        </div>
-      </main>
-    );
-  } else {
-    body = (
-      <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[300px_minmax(0,1fr)_320px] xl:overflow-hidden">
-        <div className="order-2 flex flex-col lg:col-start-1 lg:row-start-2 xl:row-start-1 xl:min-h-0">
-          <Assistant activeSummary={summary} onApprove={approve} onResetDefault={resetMapping} />
-        </div>
-        <div className="order-1 flex flex-col gap-4 lg:col-start-1 lg:row-start-1 xl:col-start-2 xl:min-h-0 xl:overflow-y-auto">
-          {stage}
-          <Spectrum rack={rack} />
-        </div>
-        <div className="order-3 flex min-h-0 flex-col lg:col-start-2 lg:row-span-2 lg:row-start-1 xl:col-start-3 xl:row-span-1">
+        <div
+          className={
+            expanded
+              ? `${OVERLAY} right-8 w-[280px]`
+              : "order-3 flex flex-col gap-4 xl:order-none xl:col-start-3 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+          }
+        >
           <RackPanel values={params} bound={bound} onManualChange={manualChange} rack={rack} />
         </div>
-      </main>
-    );
-  }
+      </div>
+    </main>
+  );
 
   return (
     <div className="flex h-dvh flex-col">
@@ -287,14 +265,15 @@ export function Studio() {
         dataConsent={dataConsent}
         onConsentChange={changeConsent}
         dbStatus={dbStatus}
-        layout={layout}
-        onLayoutChange={layoutStore.set}
+        surface={surface}
+        onSurfaceChange={surfaceStore.set}
       />
 
       {audio !== "on" && (
-        <div className="border-b border-border bg-accent/10 px-5 py-2 text-sm">
+        <p className="glass mx-auto mt-3 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-sm">
+          <span className={`size-1.5 rounded-full ${audio === "error" ? "bg-danger" : "bg-accent"}`} aria-hidden />
           {audio === "error" ? "Audio could not start. Click Retry audio." : "Click Start audio to hear the rack. Headphones recommended."}
-        </div>
+        </p>
       )}
 
       {body}

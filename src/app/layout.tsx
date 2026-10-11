@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
+import { Landscape } from "@/components/Landscape";
 import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -15,7 +16,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${jetbrainsMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Landscape className="fixed inset-0 -z-10" />
+        {children}
+      </body>
     </html>
   );
 }

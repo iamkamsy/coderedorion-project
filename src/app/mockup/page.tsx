@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Landscape } from "@/components/Landscape";
+import { PinchGlyph } from "@/components/PinchGlyph";
 
 export const metadata: Metadata = {
   title: "Mockup · Gesture Rack",
@@ -134,7 +136,7 @@ export default function Mockup() {
 
       {/* Scene: misty landscape with the glass studio window floating over it */}
       <section className="relative mt-14 px-4 pb-24 sm:mt-16">
-        <Landscape />
+        <Landscape id="mk" className="absolute inset-x-0 top-[-60px] bottom-0" />
 
         <div className="mk-float relative mx-auto max-w-4xl">
           <div className="relative overflow-hidden rounded-[28px] bg-white/10 shadow-[0_30px_80px_-20px_rgb(40_50_30/0.45)] ring-1 ring-white/60 backdrop-blur-md">
@@ -325,75 +327,6 @@ function Ring({ value }: { value: number }) {
       </svg>
       <span className="text-[13px] font-semibold">{value}</span>
     </span>
-  );
-}
-
-/** Misty mountain scene drawn in SVG, fading into the page at the top. */
-function Landscape() {
-  return (
-    <div className="pointer-events-none absolute inset-x-0 top-[-60px] bottom-0 overflow-hidden" aria-hidden>
-      <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" className="h-full w-full">
-        <defs>
-          <linearGradient id="mk-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#eeeeeb" />
-            <stop offset="0.35" stopColor="#e3e1d3" />
-            <stop offset="1" stopColor="#cfcdb4" />
-          </linearGradient>
-          <radialGradient id="mk-sun" cx="0.5" cy="0.42" r="0.4">
-            <stop offset="0" stopColor="#fffbe6" stopOpacity="0.95" />
-            <stop offset="1" stopColor="#fffbe6" stopOpacity="0" />
-          </radialGradient>
-          <linearGradient id="mk-fog" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#f4f3ec" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#f4f3ec" stopOpacity="0.75" />
-            <stop offset="1" stopColor="#f4f3ec" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="mk-fade" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#eeeeeb" />
-            <stop offset="1" stopColor="#eeeeeb" stopOpacity="0" />
-          </linearGradient>
-          <filter id="mk-soft">
-            <feGaussianBlur stdDeviation="5" />
-          </filter>
-          <filter id="mk-soft-sm">
-            <feGaussianBlur stdDeviation="1.5" />
-          </filter>
-        </defs>
-        <rect width="1440" height="760" fill="url(#mk-sky)" />
-        <rect width="1440" height="760" fill="url(#mk-sun)" />
-        {/* Far peaks, hazy */}
-        <path
-          d="M0 300 L80 250 L150 270 L240 190 L320 240 L400 210 L480 150 L560 220 L640 200 L720 120 L800 190 L880 170 L960 230 L1040 160 L1120 210 L1200 180 L1280 240 L1360 200 L1440 230 V760 H0Z"
-          fill="#cbcbb8"
-          filter="url(#mk-soft)"
-        />
-        <rect y="200" width="1440" height="150" fill="url(#mk-fog)" />
-        {/* Mid ridges */}
-        <path
-          d="M0 360 L100 300 L180 330 L280 260 L360 310 L460 270 L540 320 L640 280 L740 230 L820 290 L900 260 L1000 310 L1100 250 L1200 300 L1300 270 L1440 320 V760 H0Z"
-          fill="#a9ae8f"
-          filter="url(#mk-soft-sm)"
-        />
-        <rect y="290" width="1440" height="140" fill="url(#mk-fog)" />
-        {/* Rolling hills */}
-        <path d="M0 450 C 160 400 300 390 440 420 S 680 380 820 420 S 1080 380 1220 410 S 1380 400 1440 410 V760 H0Z" fill="#828d69" />
-        <rect y="410" width="1440" height="100" fill="url(#mk-fog)" opacity="0.7" />
-        <path d="M0 550 C 180 500 320 490 460 520 S 720 480 880 520 S 1160 490 1300 510 S 1400 505 1440 515 V760 H0Z" fill="#5b6742" />
-        <path d="M0 650 C 200 610 380 600 560 630 S 900 600 1080 625 S 1340 610 1440 620 V760 H0Z" fill="#3c4630" />
-        <rect width="1440" height="180" fill="url(#mk-fade)" />
-      </svg>
-    </div>
-  );
-}
-
-function PinchGlyph() {
-  return (
-    <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-      <path d="M6 15c-1.5-1.5-2-3.5-1.5-5.5L6 5.5" />
-      <path d="M8.5 9.5 10 4.5c.3-1 1.9-.8 1.9.3L11.5 9" />
-      <circle cx="7.6" cy="9.8" r="1.3" fill="#fa2d48" stroke="none" />
-      <path d="M11.5 9c.5-.8 1.8-.6 1.8.4v2.8c0 2.3-1.8 4.3-4.2 4.3-1.2 0-2.3-.5-3.1-1.5" />
-    </svg>
   );
 }
 
