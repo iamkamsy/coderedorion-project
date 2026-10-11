@@ -123,6 +123,34 @@ function PluginParams({
   );
 }
 
+function GateLight({ rack }: { rack: Rack | null }) {
+  const [open, setOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!rack) return;
+    let raf = 0;
+    let last: boolean | null = null;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const next = rack.isGateOpen();
+      if (next !== last) setOpen((last = next));
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [rack]);
+
+  const live = rack !== null && open !== null;
+  return (
+    <span
+      className={`flex items-center gap-1.5 text-[11px] ${live ? "text-muted" : "text-muted/60"}`}
+      title="Low cut and gate apply to the vocal mic and instrument input, not the test loop"
+    >
+      <span className={`size-2 rounded-full ${live && open ? "bg-cool" : "bg-border"}`} />
+      {live ? (open ? "Gate open" : "Gate closed") : "Live input only"}
+    </span>
+  );
+}
+
 function OutputMeter({ rack }: { rack: Rack | null }) {
   const barRef = useRef<HTMLDivElement>(null);
   const [limiting, setLimiting] = useState(false);

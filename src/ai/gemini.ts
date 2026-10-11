@@ -1,14 +1,14 @@
 import "server-only";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { PARAM_SPECS } from "@/audio/paramSchema";
+import { MAPPABLE_SPECS } from "@/audio/paramSchema";
 import { CURVES, GESTURES, MAX_TARGETS_PER_GESTURE, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 
 const TIMEOUT_MS = 15000;
 const DEFAULT_MODEL = "gemini-flash-latest";
 
-const ParamKeyEnum = z.enum(PARAM_SPECS.map((s) => `${s.plugin}.${s.param}`) as [string, ...string[]]);
+const ParamKeyEnum = z.enum(MAPPABLE_SPECS.map((s) => `${s.plugin}.${s.param}`) as [string, ...string[]]);
 
 /** What we ask Gemini for. Narrower than the contract so the model cannot invent params. */
 const ModelOutputSchema = z.object({
@@ -41,7 +41,7 @@ The rack is: input -> low-pass filter -> feedback delay -> reverb -> limiter.
 Gestures: "pinch_right" and "pinch_left". Each produces 0 (thumb and index touching) to 1 (fully open).
 For each target, "min" is the value at 0 and "max" is the value at 1. min may be greater than max to invert the direction.
 Use only these parameters, and keep values inside the given ranges:
-${PARAM_SPECS.map((s) => `- ${s.plugin}.${s.param}: ${s.min} to ${s.max}${s.unit ? " " + s.unit : ""}. ${s.description}`).join("\n")}
+${MAPPABLE_SPECS.map((s) => `- ${s.plugin}.${s.param}: ${s.min} to ${s.max}${s.unit ? " " + s.unit : ""}. ${s.description}`).join("\n")}
 Prefer pinch_right unless the user asks for two hands. Use 1 to 3 targets per gesture.
 Use "exp" for frequency and time parameters, "linear" otherwise unless the intent suggests a different feel.
 Never output parameters that are not in the list.`;

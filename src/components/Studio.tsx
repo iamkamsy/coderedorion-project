@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { Rack, SourceKind } from "@/audio/rack";
+import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
+import type { Rack } from "@/audio/rack";
 import { defaultParamValues, getParamSpec, PLUGINS } from "@/audio/paramSchema";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
 import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
@@ -73,6 +74,8 @@ export function Studio() {
   const [rack, setRack] = useState<Rack | null>(null);
   const [audio, setAudio] = useState<AudioState>("off");
   const [source, setSource] = useState<SourceKind>("loop");
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [stopped, setStopped] = useState(false);
   const [camera, setCamera] = useState<CameraStatus>("off");
   const [inputMode, setInputMode] = useState<InputMode>("fake");
   const [fakeValues, setFakeValues] = useState<Record<Gesture, number>>({ pinch_left: 0.8, pinch_right: 0.3 });
@@ -141,7 +144,13 @@ export function Studio() {
         const [plugin, param] = key.split(".");
         r.setParam(plugin, param, value);
       }
-      await r.setSource(source);
+      try {
+        await r.setSource(source);
+      } catch {
+        setSource("loop");
+        setSourceError(`Could not open the ${SOURCE_LABEL[source].toLowerCase()}. Playing the test loop instead.`);
+        await r.setSource("loop");
+      }
       rackRef.current = r;
       setRack(r);
       setAudio("on");
@@ -150,14 +159,36 @@ export function Studio() {
     }
   }, [params, source]);
 
+  const setAudioStopped = useCallback((next: boolean) => {
+    const r = rackRef.current;
+    if (!r) return;
+    r.setStopped(next);
+    setStopped(next);
+  }, []);
+
+  // Esc is a panic stop. It only stops; resuming is a deliberate click.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.repeat) setAudioStopped(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setAudioStopped]);
+
   const changeSource = useCallback(async (s: SourceKind) => {
     setSource(s);
+    setSourceError(null);
     const r = rackRef.current;
+    if (isLiveSource(s)) {
+      const lowCut = r ? r.setParam("input", "lowCut", LIVE_SOURCES[s].lowCutHz) : LIVE_SOURCES[s].lowCutHz;
+      setParams((prev) => ({ ...prev, "input.lowCut": lowCut }));
+    }
     if (!r) return;
     try {
       await r.setSource(s);
     } catch {
       setSource("loop");
+      setSourceError(`Could not open the ${SOURCE_LABEL[s].toLowerCase()}. Check microphone permission and the selected input device.`);
       await r.setSource("loop");
     }
   }, []);
@@ -259,6 +290,8 @@ export function Studio() {
       <TopBar
         audio={audio}
         onStartAudio={startAudio}
+        stopped={stopped}
+        onToggleStop={() => setAudioStopped(!stopped)}
         source={source}
         onSourceChange={changeSource}
         camera={camera}
@@ -269,6 +302,16 @@ export function Studio() {
         onSurfaceChange={surfaceStore.set}
       />
 
+      {sourceError && (
+        <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm text-danger" role="alert">
+          {sourceError}
+        </div>
+      )}
+      {audio === "on" && stopped && (
+        <div className="border-b border-border bg-danger/10 px-5 py-2 text-sm" role="status">
+          Audio stopped. Gestures and the rack keep running silently. Click Resume audio to bring it back.
+        </div>
+      )}
       {audio !== "on" && (
         <p className="glass mx-auto mt-3 flex w-fit items-center gap-2 rounded-full px-4 py-1.5 text-sm">
           <span className={`size-1.5 rounded-full ${audio === "error" ? "bg-danger" : "bg-accent"}`} aria-hidden />

@@ -1,11 +1,11 @@
-import { clampToSchema, getParamSpec, paramKey } from "@/audio/paramSchema";
+import { clampToSchema, getParamSpec, isMappable, paramKey } from "@/audio/paramSchema";
 import { MappingSchema, type Mapping } from "./types";
 
 export type ValidationResult = { ok: true; mapping: Mapping } | { ok: false; error: string };
 
 /**
  * Validate untrusted mapping JSON (for example Gemini output). Rejects unknown
- * plugins or params, duplicate gestures and duplicate targets, and clamps every
+ * or non-mappable plugins and params, duplicate gestures and duplicate targets, and clamps every
  * min and max into the parameter's hard safe range. min may exceed max, which
  * inverts the gesture direction.
  */
@@ -24,7 +24,9 @@ export function validateMapping(input: unknown): ValidationResult {
     const seenTargets = new Set<string>();
     for (const t of m.targets) {
       const key = paramKey(t.plugin, t.param);
-      if (!getParamSpec(t.plugin, t.param)) return { ok: false, error: `Unknown parameter ${key}` };
+      const spec = getParamSpec(t.plugin, t.param);
+      if (!spec) return { ok: false, error: `Unknown parameter ${key}` };
+      if (!isMappable(spec)) return { ok: false, error: `Parameter ${key} cannot be mapped to a gesture` };
       if (seenTargets.has(key)) return { ok: false, error: `Parameter ${key} is targeted twice by ${m.gesture}` };
       seenTargets.add(key);
     }

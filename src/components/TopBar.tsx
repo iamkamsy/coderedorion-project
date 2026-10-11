@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { SourceKind } from "@/audio/rack";
+import { SOURCE_LABEL, type SourceKind } from "@/audio/inputs";
 import type { BatcherStatus } from "@/lib/eventBatcher";
 import { PinchGlyph } from "./PinchGlyph";
 import type { CameraStatus } from "./Stage";
@@ -22,6 +22,8 @@ const SURFACES: SegmentOption<SurfaceKind>[] = [
 interface Props {
   audio: AudioState;
   onStartAudio: () => void;
+  stopped: boolean;
+  onToggleStop: () => void;
   source: SourceKind;
   onSourceChange: (s: SourceKind) => void;
   camera: CameraStatus;
