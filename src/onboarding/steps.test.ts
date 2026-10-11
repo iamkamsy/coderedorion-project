@@ -180,9 +180,9 @@ describe("pointers", () => {
 });
 
 describe("lingerSeconds", () => {
-  it("gives the user ten seconds to play with a gesture before moving on", () => {
+  it("gives the user seven seconds to play with a gesture before moving on", () => {
     for (const id of ["start-loop", "right-pinch", "left-pinch", "pinky", "rock", "params", "spectrum"])
-      expect(lingerSeconds(step(id))).toBe(10);
+      expect(lingerSeconds(step(id))).toBe(7);
   });
 
   it("moves on quickly once the palm has silenced the sound", () => {

@@ -220,7 +220,7 @@ export interface OnboardingSignals {
 /** How long a finished step stays up before the tour moves on, so the user can keep playing with the gesture. */
 export function lingerSeconds(step: OnboardingStep): number {
   // Nothing to play with once the sound has stopped.
-  return step.check?.kind === "stopped" ? 1 : 10;
+  return step.check?.kind === "stopped" ? 1 : 7;
 }
 
 export function stepDone(step: OnboardingStep, s: OnboardingSignals): boolean {
