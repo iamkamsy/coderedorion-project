@@ -26,6 +26,9 @@ interface Props {
   onFakeChange: (gesture: Gesture, value: number) => void;
   values: GestureValues;
   chips: Record<Gesture, Chip[]>;
+  /** When true the camera fills the screen, leaving a thin border of background. */
+  expanded: boolean;
+  onToggleExpand: () => void;
 }
 
 type CalStep = null | "closed" | "open";
@@ -44,7 +47,19 @@ function loadCalibration(): Calibration {
 }
 
 export function Stage(props: Props) {
-  const { inputMode, onInputModeChange, onCameraStatus, onTracked, onOpenHand, fakeValues, onFakeChange, values, chips } = props;
+  const {
+    inputMode,
+    onInputModeChange,
+    onCameraStatus,
+    onTracked,
+    onOpenHand,
+    fakeValues,
+    onFakeChange,
+    values,
+    chips,
+    expanded,
+    onToggleExpand,
+  } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trackerRef = useRef<HandTracker | null>(null);
@@ -174,9 +189,9 @@ export function Stage(props: Props) {
   const noHands = cameraLive && values.pinch_left === null && values.pinch_right === null;
 
   return (
-    <section className="flex min-h-0 flex-col gap-3" aria-label="Camera stage">
+    <section className="flex shrink-0 flex-col gap-3" aria-label="Camera stage" data-tour="stage">
       <div
-        className={`relative aspect-video w-full overflow-hidden rounded-[var(--radius-panel)] border border-border bg-black ${inputMode === "fake" ? "cursor-ns-resize" : ""}`}
+        className={`${expanded ? "fixed inset-x-4 top-20 bottom-4 z-30" : "relative aspect-video w-full shrink-0"} overflow-hidden rounded-[var(--radius-panel)] glass transition-[outline-color] duration-300 ${inputMode === "fake" ? "cursor-ns-resize" : ""} ${dragging || cameraLive ? "stage-live" : ""}`}
         onPointerDown={(e) => {
           if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -199,10 +214,7 @@ export function Stage(props: Props) {
                 style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
               >
                 {chips[g].map((c) => (
-                  <span
-                    key={c.label}
-                    className="rounded-full border border-accent/60 bg-bg/80 px-2 py-0.5 font-mono text-xs text-accent backdrop-blur"
-                  >
+                  <span key={c.label} className="rounded-full bg-black/70 px-2.5 py-0.5 font-mono text-xs text-white backdrop-blur-xl">
                     {c.label} {c.value}
                   </span>
                 ))}
@@ -217,9 +229,32 @@ export function Stage(props: Props) {
             <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} />
           ))}
         </div>
+
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          aria-label={expanded ? "Exit full view" : "Expand camera"}
+          title={expanded ? "Exit full view (Esc)" : "Expand camera"}
+          className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
+        >
+          <svg
+            viewBox="0 0 20 20"
+            className="size-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
+          </svg>
+        </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] border border-border bg-panel px-4 py-3 text-sm">
+      <div
+        className={`flex flex-wrap items-center gap-3 rounded-[var(--radius-panel)] glass px-4 py-3 text-sm ${expanded ? "hidden" : ""}`}
+      >
         <div className="flex rounded-lg border border-border p-0.5" role="group" aria-label="Input mode">
           {(["camera", "fake"] as const).map((m) => (
             <button
@@ -257,8 +292,7 @@ export function Stage(props: Props) {
           >
             {calStep ? "Calibrating..." : "Calibrate pinch"}
           </button>
-        )}
-        <span className="ml-auto text-xs text-muted">Video stays in your browser. Frames are never uploaded.</span>
+        )}{" "}
       </div>
     </section>
   );
@@ -292,7 +326,11 @@ function StageOverlay({
       title = "Camera is off";
       body = "Enable the camera to control effects with your hands, or drag up and down here to fake a pinch.";
       action = (
-        <button type="button" onClick={onEnable} className="pointer-events-auto mt-3 rounded-lg bg-accent px-4 py-2 font-medium text-bg">
+        <button
+          type="button"
+          onClick={onEnable}
+          className="pointer-events-auto mt-3 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-on-ink"
+        >
           Enable camera
         </button>
       );
@@ -318,7 +356,8 @@ function StageOverlay({
   if (!title && !body) return null;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-      <div className="max-w-sm rounded-xl border border-border bg-bg/80 px-5 py-4 text-center backdrop-blur">
+      <div className="max-w-sm rounded-2xl border border-white/15 bg-[rgb(18_18_20/0.82)] px-5 py-4 text-center text-[#f5f5f7] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl">
+        {/* Always a solid dark card so it stays readable over live video, whatever the box style. */}
         {title && <p className="font-medium">{title}</p>}
         {body && <p className="mt-1 text-sm text-muted">{body}</p>}
         {action}
@@ -329,12 +368,12 @@ function StageOverlay({
 
 function PinchMeter({ label, value }: { label: string; value: number | null }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border bg-bg/80 px-2.5 py-1.5 backdrop-blur">
-      <span className="text-xs text-muted">{label}</span>
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-border">
+    <div className="flex items-center gap-2 rounded-full border border-white/40 bg-white/40 px-3 py-1.5 text-[#111] backdrop-blur-xl">
+      <span className="text-xs font-medium text-black/70">{label}</span>
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/15">
         <div className="h-full bg-accent" style={{ width: `${(value ?? 0) * 100}%` }} />
       </div>
-      <span className="w-9 text-right font-mono text-xs">{value === null ? "--" : value.toFixed(2)}</span>
+      <span className="w-9 text-right font-mono text-xs font-semibold">{value === null ? "--" : value.toFixed(2)}</span>
     </div>
   );
 }
@@ -354,10 +393,11 @@ function drawOverlay(
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, w, h);
+  const tokens = getComputedStyle(document.documentElement);
 
   for (const hand of frame.hands) {
     const lm = hand.landmarks;
-    ctx.strokeStyle = "rgba(232, 230, 224, 0.55)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
     ctx.lineWidth = 3;
     ctx.beginPath();
     for (const c of connections) {
@@ -366,14 +406,14 @@ function drawOverlay(
     }
     ctx.stroke();
 
-    ctx.fillStyle = "#5BC0BE";
+    ctx.fillStyle = "#ffffff";
     for (const p of lm) {
       ctx.beginPath();
       ctx.arc(p.x * w, p.y * h, 4, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    ctx.strokeStyle = "#F26B21";
+    ctx.strokeStyle = tokens.getPropertyValue("--accent").trim();
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(lm[4].x * w, lm[4].y * h);

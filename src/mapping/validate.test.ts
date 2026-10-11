@@ -115,3 +115,20 @@ describe("input conditioning params", () => {
     expect(clampToSchema("input", "gateThreshold", 0)).toBe(-20);
   });
 });
+
+describe("plugin allowlist", () => {
+  const delayOnly = { plugins: ["delay"] };
+
+  it("accepts targets on loaded effects", () => {
+    const r = validateMapping(
+      { mappings: [{ gesture: "pinch_right", targets: [{ plugin: "delay", param: "feedback", min: 0, max: 0.6, curve: "linear" }] }] },
+      delayOnly,
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects targets on effects that are not loaded", () => {
+    const r = validateMapping(DEFAULT_MAPPING, delayOnly);
+    expect(r.ok).toBe(false);
+  });
+});
