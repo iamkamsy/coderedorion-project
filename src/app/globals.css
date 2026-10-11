@@ -23,6 +23,7 @@
   --cool: #8e8e93;
   --danger: #d70015;
   --warn: #b25000;
+  --scrollbar: rgb(0 0 0 / 0.22);
   /* Apple system font: San Francisco on macOS and iOS. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
@@ -43,6 +44,7 @@
   --cool: #c9c9bf;
   --danger: #ff6961;
   --warn: #ffb340;
+  --scrollbar: rgb(255 255 255 / 0.22);
   color: var(--text);
   color-scheme: dark;
 }
@@ -63,6 +65,7 @@
   --cool: #aeaeb2;
   --danger: #ff6961;
   --warn: #ffb340;
+  --scrollbar: rgb(255 255 255 / 0.22);
   color: var(--text);
   color-scheme: dark;
 }
@@ -112,6 +115,13 @@ input[type="range"].cool {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Thin scrollbars with an invisible track, close to macOS overlay scrollbars. Chrome and Firefox
+   follow these; Safari ignores them and keeps its own overlay scrollbars, which already look this way. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
 }
 
 /* Frosted glass surface: translucent, blurred, with a bright top edge like light catching glass. */

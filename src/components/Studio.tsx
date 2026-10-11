@@ -315,17 +315,18 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
 
   const signals: CoachSignals = { audioOn: audio === "on", abUsed, params, division, presetsLoaded, bypassToggled, asked };
 
-  // Three columns from xl up keep the camera centered on the page; below that the camera sits on top.
+  // Three columns from lg up keep the camera centered on the page. As the window narrows the side boxes
+  // shrink toward 220px and the camera takes what is left; below lg everything stacks with the camera on top.
   const body = (
-    <main className={`surface-${surface} flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden`}>
+    <main className={`surface-${surface} flex min-h-0 flex-1 flex-col overflow-y-auto p-4 lg:overflow-hidden`}>
       {/* Expanded camera: a clean landscape fills the border around it, and the side boxes float over it. */}
       {expanded && <Landscape id="expand" className="fixed inset-0 z-[25]" />}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:min-h-0 xl:flex-1 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[clamp(220px,21vw,280px)_minmax(0,1fr)_clamp(220px,21vw,280px)] lg:gap-3 xl:gap-4">
         <div
           className={
             expanded
               ? `${OVERLAY} left-8 w-[300px]`
-              : "order-2 flex flex-col gap-4 xl:order-none xl:col-start-1 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+              : "order-2 flex flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
           }
         >
           <section className="rounded-[var(--radius-panel)] glass" aria-label="AI assistant">
@@ -341,7 +342,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             </Collapsible>
           </section>
         </div>
-        <div className="order-1 flex flex-col gap-4 lg:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto">
+        <div className="order-1 flex flex-col gap-4 lg:order-none lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto">
           {tutorial && !expanded && <PresetBar presets={tutorial.presets} activeId={activePreset} onLoad={loadPreset} />}
           <Stage
             inputMode={inputMode}
@@ -365,7 +366,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
           className={
             expanded
               ? `${OVERLAY} right-8 w-[280px]`
-              : "order-3 flex flex-col gap-4 xl:order-none xl:col-start-3 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+              : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
           }
         >
           <RackPanel
