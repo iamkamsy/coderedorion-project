@@ -47,6 +47,63 @@ export const PARAM_SPECS = [
     description: "Noise gate on live input. Signal quieter than this is muted between phrases.",
   },
   {
+    plugin: "distortion",
+    param: "drive",
+    label: "Drive",
+    unit: "",
+    min: 0,
+    max: 0.9,
+    default: 0.3,
+    curve: "linear",
+    throttleMs: 40,
+    description: "How hard the signal is pushed into saturation. Low is warm, high is fuzzy and aggressive.",
+  },
+  {
+    plugin: "distortion",
+    param: "wet",
+    label: "Mix",
+    unit: "",
+    min: 0,
+    max: 1,
+    default: 1,
+    curve: "linear",
+    description: "Blend of distorted and clean signal.",
+  },
+  {
+    plugin: "phaser",
+    param: "frequency",
+    label: "Rate",
+    unit: "Hz",
+    min: 0.1,
+    max: 8,
+    default: 0.5,
+    curve: "exp",
+    description: "How fast the phaser sweeps. Slow is a gentle swirl, fast is a wobble.",
+  },
+  {
+    plugin: "phaser",
+    param: "octaves",
+    label: "Depth",
+    unit: "oct",
+    min: 1,
+    max: 6,
+    default: 3,
+    curve: "linear",
+    throttleMs: 50,
+    description: "How far the sweep travels. Deeper is a more dramatic whoosh.",
+  },
+  {
+    plugin: "phaser",
+    param: "wet",
+    label: "Mix",
+    unit: "",
+    min: 0,
+    max: 0.9,
+    default: 0.5,
+    curve: "linear",
+    description: "Blend of phased and clean signal.",
+  },
+  {
     plugin: "reverb",
     param: "wet",
     label: "Mix",
@@ -131,9 +188,11 @@ export type ParamKey = `${(typeof PARAM_SPECS)[number]["plugin"]}.${(typeof PARA
 
 export const PLUGINS: { id: PluginId; label: string }[] = [
   { id: "input", label: "Input" },
-  { id: "reverb", label: "Reverb" },
-  { id: "delay", label: "Delay" },
+  { id: "distortion", label: "Distortion" },
+  { id: "phaser", label: "Phaser" },
   { id: "filter", label: "Filter" },
+  { id: "delay", label: "Delay" },
+  { id: "reverb", label: "Reverb" },
 ];
 
 const SPEC_BY_KEY = new Map<string, ParamSpec>(PARAM_SPECS.map((s) => [`${s.plugin}.${s.param}`, s]));
@@ -163,8 +222,4 @@ export function clampToSchema(plugin: string, param: string, value: number): num
   if (!spec) throw new Error(`Unknown parameter ${paramKey(plugin, param)}`);
   if (!Number.isFinite(value)) return spec.default;
   return Math.min(spec.max, Math.max(spec.min, value));
-}
-
-export function defaultParamValues(): Record<string, number> {
-  return Object.fromEntries(PARAM_SPECS.map((s) => [paramKey(s.plugin, s.param), s.default]));
 }

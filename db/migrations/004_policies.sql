@@ -1,15 +1,13 @@
--- Refresh, compression and access for the continuous aggregate.
+-- Refresh and access for the continuous aggregate.
 -- Continuous aggregates do not support RLS, so gesture_app reads it only through
 -- owner_param_activity(), which filters on the transaction's app.owner_id.
+-- No compression policy: columnstore is off on param_events (see 002).
 
 SELECT add_continuous_aggregate_policy('param_events_1m',
   start_offset      => INTERVAL '2 hours',
   end_offset        => INTERVAL '1 minute',
   schedule_interval => INTERVAL '1 minute',
   if_not_exists     => true);
-
--- Columnstore is enabled by the tsdb.segmentby option in 002; this compresses old chunks.
-SELECT add_compression_policy('param_events', INTERVAL '7 days', if_not_exists => true);
 
 CREATE OR REPLACE FUNCTION owner_param_activity(since timestamptz)
 RETURNS TABLE (bucket timestamptz, plugin text, param text, avg_value double precision,
