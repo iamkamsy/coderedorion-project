@@ -257,18 +257,31 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     if (!stopped) setAudioStopped(true);
   }, [stopped, setAudioStopped]);
 
+  const endTour = useCallback(
+    (completed: boolean) => {
+      setAudioStopped(false);
+      if (completed) setExpanded(true);
+      tour.finish(completed);
+    },
+    [setAudioStopped, tour],
+  );
+
   // A thumbs-up held long enough is a hands-free "Start audio" (mirroring the TopBar button's own
   // enabled condition) or, if the rack is already running but panic-stopped, a hands-free "Resume
   // audio". Browsers still gate AudioContext behind a real user gesture (click/tap/key) on at least
   // one prior interaction with the page, so starting from cold only actually unlocks sound once that
-  // has happened; resuming an already-unlocked context has no such restriction.
+  // has happened; resuming an already-unlocked context has no such restriction. On the intro's last
+  // step it also doubles for the "Start playing" button: either way, bringing the sound back ends the tour.
   const onThumbsUp = useCallback(() => {
     if (audio === "on") {
-      if (stopped) setAudioStopped(false);
+      if (stopped) {
+        setAudioStopped(false);
+        if (tour.step?.id === "done") endTour(true);
+      }
       return;
     }
     if (audio !== "starting") void startAudio();
-  }, [audio, stopped, setAudioStopped, startAudio]);
+  }, [audio, stopped, setAudioStopped, startAudio, tour, endTour]);
 
   // Esc is a panic stop. It only stops; resuming is a deliberate click.
   useEffect(() => {
@@ -290,12 +303,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     stageRef.current?.startCamera();
     if (rackRef.current) setAudioStopped(true);
     else void startAudio(true);
-  };
-
-  const endTour = (completed: boolean) => {
-    setAudioStopped(false);
-    if (completed) setExpanded(true);
-    tour.finish(completed);
   };
 
   const changeSource = useCallback(async (s: SourceKind) => {

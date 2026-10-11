@@ -41,6 +41,13 @@ const POSES = {
     ring: { lean: 7, curl: 0 },
     pinky: { lean: 16, curl: 0 },
   },
+  // The thumbsUp demo turns this whole frontal pose on its side (see THUMBS_UP_TURN below) so the
+  // fist reads as held vertically, like a real thumbs up. Lean and curl here are in the hand's own
+  // frontal coordinate space, before that turn. thumbDown's lean (52) just points the thumb away
+  // from the curled fingers; thumbUp's lean (-5.6) swings it past straight-out-from-the-wrist, which
+  // is what reads as pointing up once the hand is turned.
+  thumbDown: { thumb: { lean: 52, curl: 0.4 }, index: FOLDED, middle: FOLDED, ring: FOLDED, pinky: FOLDED },
+  thumbUp: { thumb: { lean: -5.6, curl: 0 }, index: FOLDED, middle: FOLDED, ring: FOLDED, pinky: FOLDED },
 } satisfies Record<string, Pose>;
 
 /** Each demo swings from the first pose to the second and back. */
@@ -49,11 +56,14 @@ const DEMOS: Record<DemoKind, [Pose, Pose]> = {
   pinky: [POSES.pinchHalf, POSES.pinkyOut],
   rock: [POSES.pinchHalf, POSES.rock],
   palm: [POSES.relaxed, POSES.open],
+  thumbsUp: [POSES.thumbDown, POSES.thumbUp],
 };
 
 const PERIOD_MS = 2200;
 const FORESHORTEN = 0.55;
 const HOOK_DEGREES = 12;
+/** Turns the frontal fist on its side for the thumbsUp demo: rotate a quarter turn, then mirror, so the hand's width runs vertically. */
+const THUMBS_UP_TURN = ["rotate(90 60 60)", "translate(120 0) scale(-1 1)"] as const;
 
 function fingerPoints(finger: Finger, a: Pose, b: Pose, t: number) {
   const { base, angle, bones, bend } = SKELETON[finger];
@@ -99,21 +109,26 @@ export function GestureDemo({ kind, hand }: { kind: DemoKind; hand: "left" | "ri
   return (
     <svg viewBox="0 0 120 120" className="size-24 shrink-0" fill="none" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <g transform={hand === "left" ? "translate(120 0) scale(-1 1)" : undefined}>
-        <g stroke="rgb(255 255 255 / 0.7)" strokeWidth="2.5">
-          <path d={path([WRIST, knuckles[0]])} />
-          <path d={path([WRIST, ...knuckles.slice(1), WRIST])} />
-          {fingers.map((f, i) => (
-            <path key={FINGERS[i]} d={path(f)} />
-          ))}
+        <g transform={kind === "thumbsUp" ? THUMBS_UP_TURN[1] : undefined}>
+          <g transform={kind === "thumbsUp" ? THUMBS_UP_TURN[0] : undefined}>
+            <g stroke="rgb(255 255 255 / 0.7)" strokeWidth="2.5">
+              <path d={path([WRIST, knuckles[0]])} />
+              <path d={path([WRIST, ...knuckles.slice(1), WRIST])} />
+              {fingers.map((f, i) => (
+                <path key={FINGERS[i]} d={path(f)} />
+              ))}
+            </g>
+            {(kind === "pinch" || kind === "pinky") && <path d={path([thumbTip, indexTip])} stroke="var(--accent)" strokeWidth="4" />}
+            <g fill="#fff">
+              <circle cx={WRIST.x} cy={WRIST.y} r="2.6" />
+              {fingers.flat().map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r="2.6" />
+              ))}
+            </g>
+            {kind === "pinky" && <circle cx={fingers[4][3].x} cy={fingers[4][3].y} r={3 + 3 * t} stroke="var(--accent)" strokeWidth="2" />}
+            {kind === "thumbsUp" && <circle cx={thumbTip.x} cy={thumbTip.y} r={3 + 3 * t} stroke="var(--accent)" strokeWidth="2" />}
+          </g>
         </g>
-        {(kind === "pinch" || kind === "pinky") && <path d={path([thumbTip, indexTip])} stroke="var(--accent)" strokeWidth="4" />}
-        <g fill="#fff">
-          <circle cx={WRIST.x} cy={WRIST.y} r="2.6" />
-          {fingers.flat().map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="2.6" />
-          ))}
-        </g>
-        {kind === "pinky" && <circle cx={fingers[4][3].x} cy={fingers[4][3].y} r={3 + 3 * t} stroke="var(--accent)" strokeWidth="2" />}
       </g>
     </svg>
   );
