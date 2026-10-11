@@ -30,7 +30,44 @@ function single<T extends Tone.ToneAudioNode>(
 
 type Values = Record<string, number>;
 
+/** Distortion loses some of its level boost through this, so drive changes tone more than loudness. */
+const DRIVE_MAKEUP_DB = -9;
+
 const FACTORIES: Record<EffectId, (v: Values) => EffectModule> = {
+  distortion: (v) => {
+    const dist = new Tone.Distortion({ distortion: v["distortion.drive"], wet: v["distortion.wet"], oversample: "2x" });
+    const makeup = new Tone.Gain(Tone.dbToGain(DRIVE_MAKEUP_DB * v["distortion.drive"]));
+    dist.connect(makeup);
+    return {
+      input: dist,
+      output: makeup,
+      ready: Promise.resolve(),
+      apply: (param, value) => {
+        if (param === "drive") {
+          // Regenerates the waveshaper curve; throttled via the schema.
+          dist.distortion = value;
+          makeup.gain.rampTo(Tone.dbToGain(DRIVE_MAKEUP_DB * value), RAMP_SECONDS);
+        }
+        if (param === "wet") dist.wet.rampTo(value, RAMP_SECONDS);
+      },
+      dispose: () => {
+        dist.dispose();
+        makeup.dispose();
+      },
+    };
+  },
+
+  phaser: (v) =>
+    single(
+      new Tone.Phaser({ frequency: v["phaser.frequency"], octaves: v["phaser.octaves"], baseFrequency: 350, wet: v["phaser.wet"] }),
+      (ph, param, value) => {
+        if (param === "frequency") ph.frequency.rampTo(value, RAMP_SECONDS);
+        // Sweep range, not an audio gain; throttled via the schema.
+        if (param === "octaves") ph.octaves = value;
+        if (param === "wet") ph.wet.rampTo(value, RAMP_SECONDS);
+      },
+    ),
+
   filter: (v) =>
     single(new Tone.Filter({ type: "lowpass", frequency: v["filter.frequency"], Q: v["filter.Q"] }), (f, param, value) => {
       if (param === "frequency") f.frequency.rampTo(value, RAMP_SECONDS);
