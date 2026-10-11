@@ -5,7 +5,7 @@ import { PLUGINS } from "@/audio/paramSchema";
 import { HomeButton } from "@/components/HomeButton";
 import { IntroLink } from "@/components/IntroLink";
 import { LessonBadge } from "@/components/LessonBadge";
-import { PinchGlyph } from "@/components/PinchGlyph";
+import { Logo } from "@/components/Logo";
 import { INTRO_SLUG, ONBOARDING_STEPS } from "@/onboarding/steps";
 import { TUTORIALS } from "@/tutorials";
 
@@ -90,11 +90,7 @@ export default function LearnPage() {
               slug={INTRO_SLUG}
               status="ready"
               meta={`2 min · ${ONBOARDING_STEPS.length} steps`}
-              icons={
-                <span className="flex size-14 items-center justify-center rounded-2xl bg-ink [&>svg]:size-8">
-                  <PinchGlyph />
-                </span>
-              }
+              icons={<Logo className="size-14 rounded-2xl" />}
             />
           </IntroLink>
         </li>

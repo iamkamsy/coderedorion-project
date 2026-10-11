@@ -101,7 +101,7 @@ export function TopBar(props: Props) {
           </button>
         )}
         {!lesson && (
-          <Link href="/learn" className="font-semibold text-accent-text hover:text-text">
+          <Link href="/learn" className="text-muted hover:text-text">
             Learn
           </Link>
         )}
