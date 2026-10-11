@@ -235,7 +235,7 @@ function SharingCard() {
   return (
     <section className="glass flex flex-wrap items-start justify-between gap-4 rounded-[var(--radius-panel)] p-5" aria-label="Data sharing">
       <div className="max-w-2xl">
-        <h2 className="font-semibold">Share data to improve Gesture Rack</h2>
+        <h2 className="font-semibold">Share data to improve Gesture Labs</h2>
         <p className="mt-1 text-sm text-muted">
           {shared ? "On." : "Off."} Parameter moves and gesture usage are always recorded to power this dashboard. When sharing is on, what
           you ask the assistant and how effects were described can also be kept to improve future mappings. Video and audio never leave your

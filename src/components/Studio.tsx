@@ -380,7 +380,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
           className={
             expanded
               ? `${OVERLAY} right-8 w-[280px]`
-              : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
+              : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0"
           }
         >
           <RackPanel

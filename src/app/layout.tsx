@@ -9,7 +9,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gesture Rack",
+  title: "Gesture Labs",
   description: "Shape your sound with your hands.",
 };
 

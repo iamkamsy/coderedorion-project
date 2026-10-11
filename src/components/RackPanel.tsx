@@ -33,8 +33,8 @@ export function RackPanel(props: Props) {
   const liveCount = (pluginId: PluginId) => specsForPlugin(pluginId).filter((s) => bound.has(paramKey(s.plugin, s.param))).length;
   const totalLive = plugins.reduce((n, p) => n + liveCount(p.id), 0);
   return (
-    <section className="rounded-[var(--radius-panel)] glass" aria-label="Effects rack">
-      <Collapsible title="Effects" badge={totalLive > 0 && <LiveBadge count={totalLive} />} defaultOpen>
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius-panel)] glass" aria-label="Effects rack">
+      <Collapsible title="Effects" badge={totalLive > 0 && <LiveBadge count={totalLive} />} defaultOpen scrollBody>
         <ABButton held={props.dryHeld} onChange={props.onDryHeldChange} />
         <div className="flex flex-col">
           {plugins.map((plugin) => {
@@ -185,7 +185,7 @@ function DivisionPicker({ value, onChange }: { value: Division | null; onChange:
   return (
     <div className="mt-2" data-tour="delay-division">
       <p className="mb-1 text-[11px]">Sync to beat</p>
-      <div className="flex flex-wrap gap-0.5 rounded-full bg-black/[0.06] p-0.5" role="radiogroup" aria-label="Delay sync">
+      <div className="flex gap-0.5 rounded-full bg-black/[0.06] p-0.5" role="radiogroup" aria-label="Delay sync">
         {options.map((d) => (
           <button
             key={d ?? "free"}
@@ -193,7 +193,7 @@ function DivisionPicker({ value, onChange }: { value: Division | null; onChange:
             role="radio"
             aria-checked={value === d}
             onClick={() => onChange(d)}
-            className={`rounded-full px-2 py-0.5 font-mono text-[11px] transition-colors ${value === d ? "bg-white font-medium text-[#111] shadow-[0_1px_3px_rgb(0_0_0/0.14)]" : "text-muted hover:text-text"}`}
+            className={`flex-1 rounded-full py-0.5 font-mono text-[11px] whitespace-nowrap transition-colors ${value === d ? "bg-white font-medium text-[#111] shadow-[0_1px_3px_rgb(0_0_0/0.14)]" : "text-muted hover:text-text"}`}
           >
             {d ? DIVISIONS[d].label : "Free"}
           </button>
