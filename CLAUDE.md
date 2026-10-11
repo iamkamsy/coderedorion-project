@@ -127,7 +127,9 @@ The UI teammate owns this. The goal is a clean, dark, studio-like workspace wher
 
 ## 8. Data model (MVP)
 
-All tables carry audit columns: `created_at`, `updated_at` (trigger-maintained), `created_by`, `deleted_at` (soft delete). All have RLS.
+All tables carry audit columns: `created_at`, `updated_at` (trigger-maintained), `created_by`, `deleted_at` (soft delete). All have RLS, except `param_events` (see below).
+
+**`param_events` exception:** TimescaleDB cannot build a continuous aggregate on a hypertable with row security, and cannot enable RLS on a columnstore hypertable. So `param_events` has no RLS and no compression. Isolation is enforced instead: the app role has INSERT only, a `BEFORE INSERT` trigger rejects rows whose `owner_id` is not `app.owner_id`, and reads go through the `owner_param_activity()` function. Keep it that way.
 
 - `profiles`: `owner_id`, display name, `data_consent` boolean (default false), `consented_at`.
 - `mappings`: `owner_id`, name, mapping JSON (JSONB), `is_active`.
@@ -151,7 +153,7 @@ SELECT time_bucket('1 minute', time) AS bucket, owner_id, plugin, param,
 FROM param_events GROUP BY 1, 2, 3, 4;
 ```
 
-Add a compression policy and refresh policy if time allows. Soft deletes only. All schema changes go through files in `db/migrations`.
+The refresh policy is in place. No compression policy (see the `param_events` exception). Soft deletes only. All schema changes go through files in `db/migrations`.
 
 ## 9. Privacy and data collection
 
@@ -260,7 +262,7 @@ pnpm check
 - Make the smallest change that solves the task. Do not refactor unrelated code.
 - Work on a feature branch and open a PR. Do not commit to `main`.
 - Follow the no co-authoring rule in section 14 with no exceptions. Do not append attribution trailers or links.
-- Never create a table without RLS, audit columns and an `owner_id`.
+- Never create a table without RLS, audit columns and an `owner_id`. The only RLS exception is `param_events` (section 8).
 - Never touch, print or commit secrets.
 - Never remove the limiter or the parameter clamps.
 - If a requirement is ambiguous or touches a **[confirm]** item, ask the team rather than deciding silently.
