@@ -37,9 +37,9 @@ describe("onboarding steps", () => {
     }
   });
 
-  it("starts by starting the loop and ends on a card the user dismisses", () => {
+  it("starts by starting the loop and ends once the sound is back", () => {
     expect(ONBOARDING_STEPS[0].check).toEqual({ kind: "playing" });
-    expect(ONBOARDING_STEPS.at(-1)?.check).toBeNull();
+    expect(ONBOARDING_STEPS.at(-1)?.check).toEqual({ kind: "playing" });
   });
 
   it("teaches the open palm last, because it silences the audio", () => {
@@ -149,8 +149,11 @@ describe("stepDone", () => {
     expect(stepDone(step("palm"), { ...base, stopped: true })).toBe(true);
   });
 
-  it("the last card never completes on its own", () => {
-    expect(stepDone(ONBOARDING_STEPS.at(-1)!, { ...base, stopped: true, locked: true, unlocked: true, aiApplied: true })).toBe(false);
+  it("the last card completes once the sound is back, same as the first", () => {
+    const last = ONBOARDING_STEPS.at(-1)!;
+    expect(stepDone(last, { ...base, stopped: true })).toBe(false);
+    expect(stepDone(last, { ...base, audioOn: false })).toBe(false);
+    expect(stepDone(last, base)).toBe(true);
   });
 });
 

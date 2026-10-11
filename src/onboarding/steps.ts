@@ -3,7 +3,7 @@ import { GESTURES, type Gesture, type GestureValues, type Mapping } from "@/mapp
 /** Side panels the tour opens one at a time. Until then the camera has the whole screen. */
 export type Panel = "rack" | "spectrum" | "assistant";
 
-export type DemoKind = "pinch" | "pinky" | "rock" | "palm";
+export type DemoKind = "pinch" | "pinky" | "rock" | "palm" | "thumbsUp";
 
 /** A small arrow beside a control: to its left pointing right, or above it pointing down. */
 export interface Pointer {
@@ -137,11 +137,11 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: "done",
     title: "You're ready",
-    body: "That's the whole rack: pinch to shape, pinky to hold, palm to stop, and ask the AI for new ideas. Start playing to bring the sound back.",
-    demo: null,
+    body: "That's the whole rack: pinch to shape, pinky to hold, palm to stop, and ask the AI for new ideas. Give a thumbs up, or press Start playing, to bring the sound back.",
+    demo: { kind: "thumbsUp", hand: "right" },
     pointers: [],
     reveals: null,
-    check: null,
+    check: { kind: "playing" },
   },
 ];
 
