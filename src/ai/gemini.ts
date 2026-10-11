@@ -1,5 +1,5 @@
 import "server-only";
-import { FinishReason, GoogleGenAI } from "@google/genai";
+import { ApiError, FinishReason, GoogleGenAI, type GenerateContentParameters } from "@google/genai";
 import { z } from "zod";
 import { MAPPABLE_SPECS, PLUGINS, type ParamSpec } from "@/audio/paramSchema";
 import { STUDIO_MODULES, type EffectId } from "@/audio/rackSpec";
@@ -8,7 +8,8 @@ import { validateMapping } from "@/mapping/validate";
 import { toLastSentence } from "@/lib/text";
 
 const TIMEOUT_MS = 15000;
-const DEFAULT_MODEL = "gemini-flash-latest";
+/** Fast and light on free-tier rate limits: about 1.5 s to transcribe a short clip, under 1 s for text. */
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 /** What we ask Gemini for. Narrower than the contract so the model cannot invent params. */
 function outputSchema(specs: readonly ParamSpec[]) {
@@ -54,6 +55,32 @@ export type MappingProposal = { mapping: Mapping; summary: string };
 
 export class GeminiUnavailableError extends Error {}
 
+/** Gemini answered 503 (overloaded) or 429 (rate limited) twice in a row. */
+export class GeminiBusyError extends Error {}
+
+const RETRY_DELAY_MS = 800;
+
+/** Overloaded or rate limited: worth one retry. Free-tier keys hit 429 quickly. */
+function isTransient(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 503 || err.status === 429);
+}
+
+/** generateContent with one retry when Gemini is briefly overloaded or rate limited. */
+async function generate(ai: GoogleGenAI, params: GenerateContentParameters) {
+  try {
+    return await ai.models.generateContent(params);
+  } catch (err) {
+    if (!isTransient(err)) throw err;
+    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+    try {
+      return await ai.models.generateContent(params);
+    } catch (retryErr) {
+      if (isTransient(retryErr)) throw new GeminiBusyError("Gemini is overloaded or rate limited");
+      throw retryErr;
+    }
+  }
+}
+
 /**
  * @param modules effects loaded in the user's rack. The prompt, response schema and
  * validation only allow parameters of these effects.
@@ -74,7 +101,7 @@ export async function proposeMapping(
   const ai = new GoogleGenAI({ apiKey });
   const prefs = preferences.length ? `\nThis producer's remembered preferences:\n${preferences.map((p) => `- ${p}`).join("\n")}` : "";
 
-  const response = await ai.models.generateContent({
+  const response = await generate(ai, {
     model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
     contents: `Intent: ${intent}${prefs}`,
     config: {
@@ -129,7 +156,7 @@ export async function explainConcept(question: string, context: ExplainContext):
     .join("\n");
 
   const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
+  const response = await generate(ai, {
     model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
     contents: question,
     config: {
@@ -152,4 +179,57 @@ If the question is not about sound, music or these effects, say briefly that you
   const truncated = response.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS || answer.length > EXPLAIN_MAX_CHARS;
   if (truncated) answer = toLastSentence(answer.slice(0, EXPLAIN_MAX_CHARS));
   return answer;
+}
+
+const TRANSCRIBE_MAX_CHARS = 500;
+/** Audio takes noticeably longer than text, especially when Gemini is busy. */
+const TRANSCRIBE_TIMEOUT_MS = 30000;
+const TranscriptSchema = z.object({
+  heardSpeech: z.boolean().describe("True only if a person is clearly speaking words in the clip"),
+  text: z.string().describe("The spoken words, or an empty string"),
+});
+const TRANSCRIPT_JSON_SCHEMA = z.toJSONSchema(TranscriptSchema);
+
+/**
+ * Speech to text for the assistant's audio button. The clip is sent to Gemini only to be
+ * transcribed and is not stored. Returns an empty string when nothing was said.
+ */
+export async function transcribeRequest(audioBase64: string, mimeType: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new GeminiUnavailableError("GEMINI_API_KEY is not configured");
+
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await generate(ai, {
+    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [{ inlineData: { mimeType, data: audioBase64 } }, { text: "Transcribe what the speaker says, word for word." }],
+      },
+    ],
+    config: {
+      systemInstruction: `You transcribe short spoken requests from a music producer using an audio effects app.
+First decide whether a person is clearly speaking words. Tones, music, humming, noise and silence are not speech:
+then set "heardSpeech" to false and "text" to an empty string. Never guess or invent words.
+Otherwise set "heardSpeech" to true and put only the spoken words in "text", with normal punctuation.
+Do not answer, summarize or add anything.`,
+      // Structured output: plain text replies sometimes leak a stray "thought" line first.
+      responseMimeType: "application/json",
+      responseJsonSchema: TRANSCRIPT_JSON_SCHEMA,
+      temperature: 0,
+      maxOutputTokens: 1024,
+      abortSignal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
+    },
+  });
+  const parsed = TranscriptSchema.safeParse(safeJson(response.text));
+  if (!parsed.success) throw new Error("Gemini returned an unreadable transcript");
+  return parsed.data.heardSpeech ? parsed.data.text.trim().slice(0, TRANSCRIBE_MAX_CHARS) : "";
+}
+
+function safeJson(text: string | undefined): unknown {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return null;
+  }
 }
