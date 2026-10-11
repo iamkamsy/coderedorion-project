@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { setDataConsent, useDataConsent } from "@/lib/consent";
+import { HomeButton } from "./HomeButton";
 import { useEffect, useMemo, useState } from "react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { PARAM_SPECS, PLUGINS, getParamSpec } from "@/audio/paramSchema";
@@ -63,15 +65,18 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Session activity</h1>
-          <p className="text-sm text-muted">Last hour, per minute, from the Tiger Data continuous aggregate.</p>
-        </div>
-        <Link href="/" className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-text">
-          Back to rack
+      <nav className="glass flex items-center justify-between rounded-2xl p-2 pl-2.5" aria-label="Main">
+        <HomeButton />
+        <Link href="/learn" className="press rounded-xl px-3 py-1.5 text-[13px] font-semibold text-accent-text hover:text-text">
+          Learn
         </Link>
+      </nav>
+      <header>
+        <h1 className="text-xl font-semibold">Session activity</h1>
+        <p className="text-sm text-muted">Last hour, per minute, from the Tiger Data continuous aggregate.</p>
       </header>
+
+      <SharingCard />
 
       {state.kind === "loading" && <p className="text-muted">Loading activity...</p>}
       {state.kind === "error" && (
@@ -221,5 +226,30 @@ function ActivityTable({ rows }: { rows: Row[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Data sharing is on by default and is turned off here. Says plainly what is and isn't shared. */
+function SharingCard() {
+  const shared = useDataConsent();
+  return (
+    <section className="glass flex flex-wrap items-start justify-between gap-4 rounded-[var(--radius-panel)] p-5" aria-label="Data sharing">
+      <div className="max-w-2xl">
+        <h2 className="font-semibold">Share data to improve Gesture Rack</h2>
+        <p className="mt-1 text-sm text-muted">
+          {shared ? "On." : "Off."} Parameter moves and gesture usage are always recorded to power this dashboard. When sharing is on, what
+          you ask the assistant and how effects were described can also be kept to improve future mappings. Video and audio never leave your
+          browser to be stored.
+        </p>
+      </div>
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" role="switch" checked={shared} onChange={(e) => setDataConsent(e.target.checked)} className="peer sr-only" />
+        <span
+          aria-hidden
+          className="relative h-6 w-11 shrink-0 rounded-full border border-border bg-black/10 transition-colors peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent after:absolute after:top-0.5 after:left-0.5 after:size-4.5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"
+        />
+        {shared ? "Sharing on" : "Sharing off"}
+      </label>
+    </section>
   );
 }

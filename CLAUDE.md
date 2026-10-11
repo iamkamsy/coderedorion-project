@@ -158,9 +158,9 @@ The refresh policy is in place. No compression policy (see the `param_events` ex
 ## 9. Privacy and data collection
 
 - Video frames are processed in the browser and never uploaded or stored.
-- Raw audio is never stored. If the semantic feature sends a short before/after clip to Gemini, it happens only with opt-in, and the clip is discarded after the description is saved.
-- `data_consent` defaults to false. Semantic notes are written only when it is true, and the toggle is visible in the UI.
-- Make clear in the UI and pitch what is collected: parameter values, gesture usage, and (opt-in) intent text plus effect descriptions.
+- Raw audio is never stored. Voice input and the semantic feature send short clips to Gemini only to be processed, and the clips are discarded right after.
+- Sharing is **on by default** (product decision, Oct 10). The first visit records `data_consent = true` on the profile. The Share toggle lives on `/dashboard`, next to a plain statement of what is shared; turning it off sets `data_consent = false`, and semantic notes are then never written.
+- Make clear in the UI and pitch what is collected: parameter values and gesture usage always; intent text and effect descriptions while sharing is on.
 
 ## 10. Audio safety rules
 
