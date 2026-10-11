@@ -148,6 +148,21 @@ input[type="range"].cool {
     0 16px 36px -14px rgb(0 0 0 / 0.45);
 }
 
+/* Navigation bars drop the outer shadow: over the blurred backdrop it flickered under the bar's
+   ends whenever a link inside was hovered. */
+header.glass,
+nav.glass {
+  box-shadow: inset 0 1px 0 var(--glass-shine);
+}
+
+/* An effect's icon, tinted with the current text color. Set --icon to the image. */
+.effect-icon {
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+
 /* Camera window while a hand (or the fake pinch) is driving the rack: a red edge and glow. */
 .stage-live {
   outline: 1.5px solid rgb(250 45 72 / 0.6);
@@ -237,6 +252,34 @@ button.bg-accent {
   transition: opacity 0.2s;
 }
 
+/* Intro arrows: a small chevron beside the control a step is about. Fixed at the page root and
+   moved with transforms, above the side panels that float over the camera. */
+.tour-pointer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 44;
+  pointer-events: none;
+  color: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent)) drop-shadow(0 1px 2px rgb(0 0 0 / 0.6));
+  transition: opacity 0.2s;
+}
+
+.tour-pointer svg {
+  display: block;
+  animation: pointer-nudge 0.9s ease-in-out infinite;
+}
+
+/* The chevron is drawn pointing right; above a control it turns to point down. */
+.tour-pointer[data-side="top"] svg {
+  rotate: 90deg;
+}
+
+/* A side panel opening during the first-visit intro. */
+.panel-in {
+  animation: panel-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 /* Loading state: a light sweep across the status text, and three dots in a wave. */
 .shimmer-text {
   background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 35%, var(--text) 50%, var(--muted) 65%, var(--muted) 100%);
@@ -285,6 +328,19 @@ button.bg-accent {
   }
 }
 
+@keyframes pointer-nudge {
+  50% {
+    transform: translateX(-5px);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
 @keyframes wave-bob {
   0%,
   60%,
@@ -299,7 +355,9 @@ button.bg-accent {
 @media (prefers-reduced-motion: reduce) {
   .shimmer-text,
   .phrase-in,
-  .wave-dot {
+  .wave-dot,
+  .panel-in,
+  .tour-pointer svg {
     animation: none;
   }
   .shimmer-text {

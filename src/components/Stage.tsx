@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { HandTracker, TrackerFrame } from "@/gesture/tracker";
+import { HoldTimer } from "@/gesture/hold";
+import { HandLock } from "@/gesture/lock";
 import { DEFAULT_CALIBRATION, normalizePinch, type Calibration } from "@/gesture/pinch";
 import { GESTURES, type Gesture, type GestureValues } from "@/mapping/types";
 import { GESTURE_LABEL } from "@/lib/format";
@@ -14,26 +16,49 @@ export interface Chip {
   value: string;
 }
 
+export interface StageHandle {
+  /** Ask for the camera and start tracking, unless it is already running. */
+  startCamera: () => void;
+}
+
 interface Props {
+  ref?: React.Ref<StageHandle>;
   inputMode: InputMode;
   onInputModeChange: (mode: InputMode) => void;
   onCameraStatus: (status: CameraStatus) => void;
   /** Camera-derived values. Called every tracked frame. */
   onTracked: (values: GestureValues) => void;
-  /** Called whenever a tracked frame shows an open palm. Used as a hands-free panic stop. */
+  /** Called when an open palm has been held up for two seconds. Used as a hands-free panic stop. */
   onOpenHand: () => void;
+  /** Called when a hand is locked by a held pinky (true) or unlocked by a held rock sign (false). */
+  onLockChange?: (locked: boolean) => void;
+  /** False ignores the open palm. Defaults to true. */
+  stopEnabled?: boolean;
+  /** False ignores the lock gesture and releases any locked hand. Defaults to true. */
+  lockEnabled?: boolean;
   fakeValues: Record<Gesture, number>;
   onFakeChange: (gesture: Gesture, value: number) => void;
   values: GestureValues;
   chips: Record<Gesture, Chip[]>;
   /** When true the camera fills the screen, leaving a thin border of background. */
   expanded: boolean;
-  onToggleExpand: () => void;
+  /** Omit to hide the expand button. */
+  onToggleExpand?: () => void;
 }
 
 type CalStep = null | "closed" | "open";
 const CAL_KEY = "gesture-rack.calibration";
 const CAL_SAMPLE_MS = 1500;
+/** How long a pose must be held before it counts, so a passing hand shape (or a misread face) does nothing. */
+const STOP_HOLD_MS = 2000;
+const PINKY_TIP = 20;
+/** What a hand's lock shows on screen: nothing, a raised pinky counting toward a lock, or locked. */
+type LockUi = "idle" | "seen" | "locked";
+const IDLE_LOCKS: Record<Gesture, LockUi> = { pinch_left: "idle", pinch_right: "idle" };
+const handLocks = (): Record<Gesture, HandLock> => ({ pinch_left: new HandLock(), pinch_right: new HandLock() });
+const lockUiOf = (lock: HandLock): LockUi => (lock.locked ? "locked" : lock.seen ? "seen" : "idle");
+/** Per hand, what to draw at the pinky tip: a ring filling toward the lock, or the locked dot. */
+type PinkyMarks = Partial<Record<Gesture, { progress: number; locked: boolean }>>;
 
 function loadCalibration(): Calibration {
   try {
@@ -48,11 +73,15 @@ function loadCalibration(): Calibration {
 
 export function Stage(props: Props) {
   const {
+    ref,
     inputMode,
     onInputModeChange,
     onCameraStatus,
     onTracked,
     onOpenHand,
+    onLockChange,
+    stopEnabled = true,
+    lockEnabled = true,
     fakeValues,
     onFakeChange,
     values,
@@ -68,13 +97,28 @@ export function Stage(props: Props) {
   const calRef = useRef<Calibration>(DEFAULT_CALIBRATION);
   const samplesRef = useRef<number[]>([]);
   const calStepRef = useRef<CalStep>(null);
-  /** Last live (non-frozen) value per gesture, held steady while that hand's pinky is stuck out. */
+  /** Last live value per gesture, held steady while that hand is locked. */
   const heldValuesRef = useRef<GestureValues>({ pinch_left: null, pinch_right: null });
+  const [stopTimer] = useState(() => new HoldTimer(STOP_HOLD_MS));
+  const [locks] = useState(handLocks);
+  // The camera loop keeps the callback it was started with, so it reads these switches from refs.
+  const stopEnabledRef = useRef(stopEnabled);
+  const lockEnabledRef = useRef(lockEnabled);
 
   const [status, setStatus] = useState<CameraStatus>("off");
   const [anchors, setAnchors] = useState<Partial<Record<Gesture, { x: number; y: number }>>>({});
   const [calStep, setCalStep] = useState<CalStep>(null);
   const [dragging, setDragging] = useState(false);
+  const [lockUi, setLockUi] = useState(IDLE_LOCKS);
+  /** What the pose being held right now will do once the hold completes. */
+  const [holdHint, setHoldHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    stopEnabledRef.current = stopEnabled;
+    lockEnabledRef.current = lockEnabled;
+    // The next camera frame copies this into state.
+    if (!lockEnabled) for (const g of GESTURES) locks[g].release();
+  }, [stopEnabled, lockEnabled, locks]);
 
   const updateStatus = useCallback(
     (s: CameraStatus) => {
@@ -92,27 +136,53 @@ export function Stage(props: Props) {
     (frame: TrackerFrame) => {
       const next: GestureValues = { pinch_left: null, pinch_right: null };
       const nextAnchors: Partial<Record<Gesture, { x: number; y: number }>> = {};
+      const now = frame.timestamp;
+      // Poses are ignored during calibration, so sampling an open hand can't also stop the audio.
+      const posesOn = !calStepRef.current;
+      const seen = new Set<Gesture>();
       let anyOpen = false;
+      let hint: string | null = null;
+      const marks: PinkyMarks = {};
       for (const hand of frame.hands) {
+        const g = hand.gesture;
+        seen.add(g);
+        const lock = locks[g];
+        const pinky = posesOn && lockEnabledRef.current && hand.pinkyExtended && !hand.isOpen;
+        const change = lock.update({ pinky, rock: posesOn && hand.isRock }, now);
+        if (change) onLockChange?.(change === "locked");
+        if (lock.seen) hint = "Pinky seen: hold to lock";
+        if (lock.unlocking) hint = "Hold to unlock";
+        if (lock.seen || lock.locked) marks[g] = { progress: lock.progress(now), locked: lock.locked };
+
         const live = normalizePinch(hand.ratio, calRef.current);
-        const held = heldValuesRef.current[hand.gesture];
-        if (hand.pinkyExtended && held !== null) {
-          next[hand.gesture] = held;
+        const held = heldValuesRef.current[g];
+        // Frozen from the moment the pinky is seen, so the lock keeps the value the hand had then.
+        if ((lock.locked || lock.seen) && held !== null) {
+          next[g] = held;
         } else {
-          next[hand.gesture] = live;
-          heldValuesRef.current[hand.gesture] = live;
+          next[g] = live;
+          heldValuesRef.current[g] = live;
         }
-        nextAnchors[hand.gesture] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
+        nextAnchors[g] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
         if (calStepRef.current) samplesRef.current.push(hand.ratio);
         if (hand.isOpen) anyOpen = true;
       }
+      for (const g of GESTURES) {
+        if (!seen.has(g) && locks[g].update(null, now)) onLockChange?.(true);
+      }
+      if (stopTimer.update(posesOn && stopEnabledRef.current && anyOpen, now)) onOpenHand();
+      if (stopTimer.pending) hint = "Hold to stop";
+      setHoldHint(hint);
+      setLockUi((prev) => {
+        const left = lockUiOf(locks.pinch_left);
+        const right = lockUiOf(locks.pinch_right);
+        return prev.pinch_left === left && prev.pinch_right === right ? prev : { pinch_left: left, pinch_right: right };
+      });
       setAnchors(nextAnchors);
       onTracked(next);
-      // Only outside calibration, so holding an open palm to sample "open" during pinch calibration can't also stop audio.
-      if (anyOpen && !calStepRef.current) onOpenHand();
-      drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current);
+      drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current, marks);
     },
-    [onTracked, onOpenHand],
+    [onTracked, onOpenHand, onLockChange, stopTimer, locks],
   );
 
   const stopCamera = useCallback(() => {
@@ -156,6 +226,16 @@ export function Stage(props: Props) {
   }, [handleFrame, onInputModeChange, stopCamera, updateStatus]);
 
   useEffect(() => stopCamera, [stopCamera]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      startCamera: () => {
+        if (!streamRef.current) void startCamera();
+      },
+    }),
+    [startCamera],
+  );
 
   const runCalibration = useCallback(async () => {
     const collect = async (step: Exclude<CalStep, null>) => {
@@ -226,30 +306,41 @@ export function Stage(props: Props) {
 
         <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
           {GESTURES.map((g) => (
-            <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} />
+            <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} lock={lockUi[g]} />
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={onToggleExpand}
-          aria-label={expanded ? "Exit full view" : "Expand camera"}
-          title={expanded ? "Exit full view (Esc)" : "Expand camera"}
-          className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
-        >
-          <svg
-            viewBox="0 0 20 20"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
+        {holdHint && (
+          <p
+            className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm font-medium text-white backdrop-blur-xl"
+            role="status"
           >
-            {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
-          </svg>
-        </button>
+            {holdHint}
+          </p>
+        )}
+
+        {onToggleExpand && (
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            aria-label={expanded ? "Exit full view" : "Expand camera"}
+            title={expanded ? "Exit full view (Esc)" : "Expand camera"}
+            className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
+            </svg>
+          </button>
+        )}
       </div>
 
       <div
@@ -366,10 +457,16 @@ function StageOverlay({
   );
 }
 
-function PinchMeter({ label, value }: { label: string; value: number | null }) {
+function PinchMeter({ label, value, lock }: { label: string; value: number | null; lock: LockUi }) {
   return (
     <div className="flex items-center gap-2 rounded-full border border-white/40 bg-white/40 px-3 py-1.5 text-[#111] backdrop-blur-xl">
       <span className="text-xs font-medium text-black/70">{label}</span>
+      {lock === "seen" && (
+        <span className="animate-pulse rounded-full border border-accent px-1.5 text-[10px] font-semibold text-accent-text">
+          Pinky seen
+        </span>
+      )}
+      {lock === "locked" && <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-white">Locked</span>}
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/15">
         <div className="h-full bg-accent" style={{ width: `${(value ?? 0) * 100}%` }} />
       </div>
@@ -383,6 +480,7 @@ function drawOverlay(
   video: HTMLVideoElement | null,
   frame: TrackerFrame,
   connections: { start: number; end: number }[],
+  marks: PinkyMarks,
 ) {
   if (!canvas || !video) return;
   const w = video.videoWidth;
@@ -413,11 +511,38 @@ function drawOverlay(
       ctx.fill();
     }
 
-    ctx.strokeStyle = tokens.getPropertyValue("--accent").trim();
+    const accent = tokens.getPropertyValue("--accent").trim();
+    ctx.strokeStyle = accent;
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(lm[4].x * w, lm[4].y * h);
     ctx.lineTo(lm[8].x * w, lm[8].y * h);
+    ctx.stroke();
+
+    const mark = marks[hand.gesture];
+    if (!mark) continue;
+    const x = lm[PINKY_TIP].x * w;
+    const y = lm[PINKY_TIP].y * h;
+    if (mark.locked) {
+      // Locked: a solid dot on the pinky tip.
+      ctx.fillStyle = accent;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(x, y, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      continue;
+    }
+    // Pinky seen: a ring around the tip that fills as the hold counts toward the lock.
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x, y, 22, -Math.PI / 2, -Math.PI / 2 + mark.progress * Math.PI * 2);
     ctx.stroke();
   }
 }

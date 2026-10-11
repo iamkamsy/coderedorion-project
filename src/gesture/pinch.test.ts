@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OneEuroFilter } from "./oneEuro";
-import { isOpenHand, isPinkyExtended, normalizePinch, pinchRatio, type Point } from "./pinch";
+import { isOpenHand, isPinkyExtended, isRockSign, normalizePinch, pinchRatio, type Point } from "./pinch";
 
 function hand(scale: number, pinchGap: number, offset = 0): Point[] {
   const pts: Point[] = Array.from({ length: 21 }, () => ({ x: offset, y: offset }));
@@ -31,6 +31,40 @@ function handWithFingers(extended: boolean): Point[] {
   for (const [i] of tips) pts[i] = { x: 0, y: extended ? 0.1 : 0.95 };
   return pts;
 }
+
+/** A hand where each named finger is either extended far out or curled back in. */
+function handWith(up: { index: boolean; middle: boolean; ring: boolean; pinky: boolean }): Point[] {
+  const pts: Point[] = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+  pts[0] = { x: 0, y: 1 }; // wrist
+  const fingers: [number, number, boolean][] = [
+    [5, 8, up.index],
+    [9, 12, up.middle],
+    [13, 16, up.ring],
+    [17, 20, up.pinky],
+  ];
+  for (const [mcp, tip, extended] of fingers) {
+    pts[mcp] = { x: 0, y: 0.9 };
+    pts[tip] = { x: 0, y: extended ? 0.1 : 0.95 };
+  }
+  return pts;
+}
+
+describe("isRockSign", () => {
+  it("is true with index and pinky up and the two middle fingers folded", () => {
+    expect(isRockSign(handWith({ index: true, middle: false, ring: false, pinky: true }))).toBe(true);
+  });
+
+  it("is false for an open palm, a lone pinky, a peace sign and a fist", () => {
+    expect(isRockSign(handWith({ index: true, middle: true, ring: true, pinky: true }))).toBe(false);
+    expect(isRockSign(handWith({ index: false, middle: false, ring: false, pinky: true }))).toBe(false);
+    expect(isRockSign(handWith({ index: true, middle: true, ring: false, pinky: false }))).toBe(false);
+    expect(isRockSign(handWith({ index: false, middle: false, ring: false, pinky: false }))).toBe(false);
+  });
+
+  it("returns false for incomplete hands", () => {
+    expect(isRockSign([])).toBe(false);
+  });
+});
 
 describe("pinchRatio", () => {
   it("is independent of hand size (distance from camera)", () => {

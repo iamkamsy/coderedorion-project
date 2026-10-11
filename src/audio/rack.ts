@@ -21,6 +21,8 @@ export interface RackOptions {
   bypassed?: readonly EffectId[];
   /** Start the delay locked to this note division. */
   delayDivision?: Division | null;
+  /** Start silent, as if stopped. Call setStopped(false) to fade in. */
+  stopped?: boolean;
 }
 
 /** An effect wrapped in a dry/wet crossfade so it can be bypassed without a click. */
@@ -134,6 +136,11 @@ export class Rack {
     const rack = new Rack(options.modules ?? STUDIO_MODULES, options.bypassed ?? []);
     await Promise.all([...rack.slots.values()].map((s) => s.effect.ready));
     if (options.delayDivision) rack.setDelayDivision(options.delayDivision);
+    if (options.stopped) {
+      // Nothing is playing yet, so there is no click to avoid.
+      rack.stopped = true;
+      rack.master.gain.value = 0;
+    }
     return rack;
   }
 

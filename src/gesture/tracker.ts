@@ -2,11 +2,12 @@ import { FilesetResolver, HandLandmarker, type NormalizedLandmark } from "@media
 import type { Gesture } from "@/mapping/types";
 import { gestureForHandedness } from "./handedness";
 import { OneEuroFilter } from "./oneEuro";
-import { isOpenHand, isPinkyExtended, pinchRatio } from "./pinch";
+import { isOpenHand, isPinkyExtended, isRockSign, pinchRatio } from "./pinch";
 
 /** Copied from node_modules on install (scripts/copy-mediapipe.mjs). */
 const WASM_PATH = "/mediapipe/wasm";
 const MODEL_PATH = "/models/hand_landmarker.task";
+const HAND_CONFIDENCE = 0.7;
 
 export interface TrackedHand {
   gesture: Gesture;
@@ -15,8 +16,10 @@ export interface TrackedHand {
   ratio: number;
   /** True for a flat open palm (all fingers extended), as opposed to a pinch or fist. */
   isOpen: boolean;
-  /** True when the pinky is stuck out. Freezes this hand's pinch at its current value. */
+  /** True when the pinky is stuck out. Held, it locks this hand's pinch at its current value. */
   pinkyExtended: boolean;
+  /** True for a rock sign (index and pinky up). Held, it unlocks this hand. */
+  isRock: boolean;
 }
 
 export type TrackerFrame = { hands: TrackedHand[]; timestamp: number };
@@ -40,6 +43,9 @@ export class HandTracker {
       baseOptions: { modelAssetPath: MODEL_PATH, delegate: "GPU" as const },
       runningMode: "VIDEO" as const,
       numHands: 2,
+      // Stricter than the 0.5 defaults, so a face or a shadow is not taken for a hand.
+      minHandDetectionConfidence: HAND_CONFIDENCE,
+      minHandPresenceConfidence: HAND_CONFIDENCE,
     };
     try {
       tracker.landmarker = await HandLandmarker.createFromOptions(fileset, options);
@@ -75,6 +81,7 @@ export class HandTracker {
           ratio: this.filters[gesture].filter(raw, now),
           isOpen: isOpenHand(landmarks),
           pinkyExtended: isPinkyExtended(landmarks),
+          isRock: isRockSign(landmarks),
         });
       });
       for (const g of Object.keys(this.filters) as Gesture[]) if (!seen.has(g)) this.filters[g].reset();

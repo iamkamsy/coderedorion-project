@@ -72,9 +72,23 @@ export function isOpenHand(landmarks: readonly Point[]): boolean {
 }
 
 /**
+ * True for a rock sign: index and pinky up, middle and ring folded. The thumb is ignored, so it
+ * works with the thumb out or tucked in.
+ */
+export function isRockSign(landmarks: readonly Point[]): boolean {
+  if (landmarks.length < 21) return false;
+  return (
+    isFingerExtended(landmarks, INDEX_MCP, INDEX_TIP) &&
+    isFingerExtended(landmarks, PINKY_MCP, PINKY_TIP) &&
+    !isFingerExtended(landmarks, MIDDLE_MCP, MIDDLE_TIP) &&
+    !isFingerExtended(landmarks, RING_MCP, RING_TIP)
+  );
+}
+
+/**
  * True when the pinky is stuck out away from the wrist while the rest of the gesture continues
- * (unlike isOpenHand, this does not require the other fingers to be extended too). Used as a
- * per-hand hold: stick the pinky out to freeze that hand's pinch at its current value.
+ * (unlike isOpenHand, this does not require the other fingers to be extended too). Held for a
+ * moment, it locks that hand's pinch at its current value.
  */
 export function isPinkyExtended(landmarks: readonly Point[]): boolean {
   if (landmarks.length < 21) return false;

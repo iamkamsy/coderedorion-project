@@ -23,7 +23,7 @@ function progressKey(slug: string) {
 }
 
 /** Records that a tutorial was finished, for the badge on /learn. */
-function saveFinished(slug: string) {
+export function saveFinished(slug: string) {
   try {
     localStorage.setItem(progressKey(slug), JSON.stringify({ finished: true, at: new Date().toISOString() }));
   } catch {}
@@ -281,7 +281,7 @@ function clippingAncestors(el: HTMLElement): HTMLElement[] {
   return out;
 }
 
-function SpeakerIcon({ on }: { on: boolean }) {
+export function SpeakerIcon({ on }: { on: boolean }) {
   return (
     <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
       <path d="M3.5 8h3l4-3.5v11L6.5 12h-3Z" strokeLinejoin="round" />
