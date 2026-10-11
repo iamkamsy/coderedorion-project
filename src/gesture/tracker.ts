@@ -2,7 +2,7 @@ import { FilesetResolver, HandLandmarker, type NormalizedLandmark } from "@media
 import type { Gesture } from "@/mapping/types";
 import { gestureForHandedness } from "./handedness";
 import { OneEuroFilter } from "./oneEuro";
-import { isOpenHand, isPinkyExtended, isRockSign, pinchRatio } from "./pinch";
+import { isOpenHand, isPinkyExtended, isRockSign, isThumbsUp, pinchRatio } from "./pinch";
 
 /** Copied from node_modules on install (scripts/copy-mediapipe.mjs). */
 const WASM_PATH = "/mediapipe/wasm";
@@ -20,6 +20,8 @@ export interface TrackedHand {
   pinkyExtended: boolean;
   /** True for a rock sign (index and pinky up). Held, it unlocks this hand. */
   isRock: boolean;
+  /** True for a thumbs-up. Used as a hands-free trigger to start audio. */
+  thumbsUp: boolean;
 }
 
 export type TrackerFrame = { hands: TrackedHand[]; timestamp: number };
@@ -82,6 +84,7 @@ export class HandTracker {
           isOpen: isOpenHand(landmarks),
           pinkyExtended: isPinkyExtended(landmarks),
           isRock: isRockSign(landmarks),
+          thumbsUp: isThumbsUp(landmarks),
         });
       });
       for (const g of Object.keys(this.filters) as Gesture[]) if (!seen.has(g)) this.filters[g].reset();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { OneEuroFilter } from "./oneEuro";
-import { isOpenHand, isPinkyExtended, isRockSign, normalizePinch, pinchRatio, type Point } from "./pinch";
+import { isOpenHand, isPinkyExtended, isRockSign, isThumbsUp, normalizePinch, pinchRatio, type Point } from "./pinch";
 
 function hand(scale: number, pinchGap: number, offset = 0): Point[] {
   const pts: Point[] = Array.from({ length: 21 }, () => ({ x: offset, y: offset }));
@@ -107,6 +107,45 @@ describe("isPinkyExtended", () => {
 
   it("returns false for incomplete hands", () => {
     expect(isPinkyExtended([])).toBe(false);
+  });
+});
+
+/** A hand with the four fingers curled (as handWithFingers(false)) and the thumb set separately. */
+function handWithThumbsUp(thumbExtended: boolean): Point[] {
+  const pts = handWithFingers(false);
+  pts[2] = { x: 0, y: 0.9 }; // thumb MCP
+  pts[3] = { x: 0, y: thumbExtended ? 0.45 : 0.9 }; // thumb IP
+  pts[4] = { x: 0, y: thumbExtended ? 0 : 0.95 }; // thumb tip
+  return pts;
+}
+
+describe("isThumbsUp", () => {
+  it("is true when the thumb is extended and the other fingers are curled", () => {
+    expect(isThumbsUp(handWithThumbsUp(true))).toBe(true);
+  });
+
+  it("is false when the thumb is curled in too", () => {
+    expect(isThumbsUp(handWithThumbsUp(false))).toBe(false);
+  });
+
+  it("is false when the thumb is extended but sideways rather than pointing up", () => {
+    const pts = handWithThumbsUp(true);
+    pts[4] = { x: 0.9, y: 0.9 }; // thumb tip stuck straight out sideways, level with its own MCP
+    expect(isThumbsUp(pts)).toBe(false);
+  });
+
+  it("is false when the thumb's IP joint is not above the index knuckle, even if pointing up", () => {
+    const pts = handWithThumbsUp(true);
+    pts[3] = { x: 0, y: 0.95 }; // thumb IP at or below the index MCP (y: 0.9)
+    expect(isThumbsUp(pts)).toBe(false);
+  });
+
+  it("is false for an open hand, since isOpenHand and isThumbsUp are opposite shapes", () => {
+    expect(isThumbsUp(handWithFingers(true))).toBe(false);
+  });
+
+  it("returns false for incomplete hands", () => {
+    expect(isThumbsUp([])).toBe(false);
   });
 });
 

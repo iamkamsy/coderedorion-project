@@ -77,7 +77,7 @@ export function TopBar(props: Props) {
             </span>
           </nav>
         ) : (
-          <span className="text-[15px] font-semibold tracking-tight">Gesture Rack</span>
+          <span className="text-[15px] font-semibold tracking-tight">Gesture Labs</span>
         )}
       </div>
 

@@ -3,7 +3,7 @@ import { Landscape } from "@/components/Landscape";
 import { PinchGlyph } from "@/components/PinchGlyph";
 
 export const metadata: Metadata = {
-  title: "Mockup · Gesture Rack",
+  title: "Mockup · Gesture Labs",
   description: "Design mockup: light, airy landing-style studio with the effects rack as a dock of live widgets.",
 };
 
@@ -94,7 +94,7 @@ export default function Mockup() {
         <span className="flex size-9 items-center justify-center rounded-[10px] bg-[#111] shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]">
           <PinchGlyph />
         </span>
-        <span className="mr-auto text-[15px] font-semibold tracking-tight sm:mr-6">Gesture Rack</span>
+        <span className="mr-auto text-[15px] font-semibold tracking-tight sm:mr-6">Gesture Labs</span>
         <nav className="mr-auto hidden gap-6 text-sm text-black/60 sm:flex">
           <span>Studio</span>
           <span>Effects</span>
@@ -225,7 +225,7 @@ export default function Mockup() {
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <span className="truncate text-[13px] font-semibold">Test loop</span>
-                    <span className="truncate text-[11px] text-white/50">Gesture Rack · Limiter on</span>
+                    <span className="truncate text-[11px] text-white/50">Gesture Labs · Limiter on</span>
                     <span className="h-1 w-full overflow-hidden rounded-full bg-white/15">
                       <span className="mk-bar block h-full w-full rounded-full bg-white" />
                     </span>

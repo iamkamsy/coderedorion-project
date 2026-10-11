@@ -36,6 +36,8 @@ interface Props {
   stopEnabled?: boolean;
   /** False ignores the lock gesture and releases any locked hand. Defaults to true. */
   lockEnabled?: boolean;
+  /** Called after a thumbs-up has been held long enough. Used as a hands-free way to start audio. */
+  onThumbsUp: () => void;
   fakeValues: Record<Gesture, number>;
   onFakeChange: (gesture: Gesture, value: number) => void;
   values: GestureValues;
@@ -51,6 +53,8 @@ const CAL_KEY = "gesture-rack.calibration";
 const CAL_SAMPLE_MS = 1500;
 /** How long a pose must be held before it counts, so a passing hand shape (or a misread face) does nothing. */
 const STOP_HOLD_MS = 2000;
+/** How long a thumbs-up must be held before it starts audio, so a passing thumb doesn't trip it. */
+const THUMBS_UP_HOLD_MS = 1500;
 const PINKY_TIP = 20;
 /** What a hand's lock shows on screen: nothing, a raised pinky counting toward a lock, or locked. */
 type LockUi = "idle" | "seen" | "locked";
@@ -82,6 +86,7 @@ export function Stage(props: Props) {
     onLockChange,
     stopEnabled = true,
     lockEnabled = true,
+    onThumbsUp,
     fakeValues,
     onFakeChange,
     values,
@@ -100,10 +105,19 @@ export function Stage(props: Props) {
   /** Last live value per gesture, held steady while that hand is locked. */
   const heldValuesRef = useRef<GestureValues>({ pinch_left: null, pinch_right: null });
   const [stopTimer] = useState(() => new HoldTimer(STOP_HOLD_MS));
+  const [thumbsUpTimer] = useState(() => new HoldTimer(THUMBS_UP_HOLD_MS));
   const [locks] = useState(handLocks);
   // The camera loop keeps the callback it was started with, so it reads these switches from refs.
   const stopEnabledRef = useRef(stopEnabled);
   const lockEnabledRef = useRef(lockEnabled);
+  // onThumbsUp calls the async startAudio(). handleFrame is handed to the tracker exactly once (in
+  // startCamera) and never re-subscribed, so calling onThumbsUp directly would freeze it at whatever
+  // closure was live when the camera started, letting a stale closure's startAudio() race new ones
+  // and trip React's update-depth guard. Reading through a ref keeps it seeing the current callback.
+  const onThumbsUpRef = useRef(onThumbsUp);
+  useEffect(() => {
+    onThumbsUpRef.current = onThumbsUp;
+  }, [onThumbsUp]);
 
   const [status, setStatus] = useState<CameraStatus>("off");
   const [anchors, setAnchors] = useState<Partial<Record<Gesture, { x: number; y: number }>>>({});
@@ -137,10 +151,11 @@ export function Stage(props: Props) {
       const next: GestureValues = { pinch_left: null, pinch_right: null };
       const nextAnchors: Partial<Record<Gesture, { x: number; y: number }>> = {};
       const now = frame.timestamp;
-      // Poses are ignored during calibration, so sampling an open hand can't also stop the audio.
+      // Poses are ignored during calibration, so sampling an open hand can't also stop (or start) the audio.
       const posesOn = !calStepRef.current;
       const seen = new Set<Gesture>();
       let anyOpen = false;
+      let anyThumbsUp = false;
       let hint: string | null = null;
       const marks: PinkyMarks = {};
       for (const hand of frame.hands) {
@@ -166,12 +181,16 @@ export function Stage(props: Props) {
         nextAnchors[g] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
         if (calStepRef.current) samplesRef.current.push(hand.ratio);
         if (hand.isOpen) anyOpen = true;
+        if (hand.thumbsUp) anyThumbsUp = true;
       }
       for (const g of GESTURES) {
         if (!seen.has(g) && locks[g].update(null, now)) onLockChange?.(true);
       }
       if (stopTimer.update(posesOn && stopEnabledRef.current && anyOpen, now)) onOpenHand();
+      // Fires once per hold, through a ref: see the comment on onThumbsUpRef above.
+      if (thumbsUpTimer.update(posesOn && anyThumbsUp, now)) onThumbsUpRef.current();
       if (stopTimer.pending) hint = "Hold to stop";
+      else if (thumbsUpTimer.pending) hint = "Hold to start";
       setHoldHint(hint);
       setLockUi((prev) => {
         const left = lockUiOf(locks.pinch_left);
@@ -182,7 +201,7 @@ export function Stage(props: Props) {
       onTracked(next);
       drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current, marks);
     },
-    [onTracked, onOpenHand, onLockChange, stopTimer, locks],
+    [onTracked, onOpenHand, onLockChange, stopTimer, thumbsUpTimer, locks],
   );
 
   const stopCamera = useCallback(() => {
@@ -269,78 +288,83 @@ export function Stage(props: Props) {
   const noHands = cameraLive && values.pinch_left === null && values.pinch_right === null;
 
   return (
-    <section className="flex shrink-0 flex-col gap-3" aria-label="Camera stage" data-tour="stage">
-      <div
-        className={`${expanded ? "fixed inset-x-4 top-20 bottom-4 z-30" : "relative aspect-video w-full shrink-0"} overflow-hidden rounded-[var(--radius-panel)] glass transition-[outline-color] duration-300 ${inputMode === "fake" ? "cursor-ns-resize" : ""} ${dragging || cameraLive ? "stage-live" : ""}`}
-        onPointerDown={(e) => {
-          if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setDragging(true);
-        }}
-        onPointerUp={() => setDragging(false)}
-        onPointerMove={onPointer}
-      >
-        <video ref={videoRef} className="absolute inset-0 h-full w-full -scale-x-100 object-cover" playsInline muted />
-        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover" />
+    <section className="flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Camera stage" data-tour="stage">
+      {/* From lg up the camera takes whatever height the column has left and stays 16:9 inside it, so the
+          controls and spectrum below never push the page into scrolling. Size containment only when not
+          expanded: it would trap the fixed-position expanded view inside this box. */}
+      <div className={expanded ? "" : "flex justify-center lg:min-h-0 lg:flex-1 lg:[container-type:size]"}>
+        <div
+          className={`${expanded ? "fixed inset-x-4 top-20 bottom-4 z-30" : "relative aspect-video w-full shrink-0 lg:w-[min(100cqw,calc(100cqh*16/9))]"} overflow-hidden rounded-[var(--radius-panel)] glass transition-[outline-color] duration-300 ${inputMode === "fake" ? "cursor-ns-resize" : ""} ${dragging || cameraLive ? "stage-live" : ""}`}
+          onPointerDown={(e) => {
+            if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDragging(true);
+          }}
+          onPointerUp={() => setDragging(false)}
+          onPointerMove={onPointer}
+        >
+          <video ref={videoRef} className="absolute inset-0 h-full w-full -scale-x-100 object-cover" playsInline muted />
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover" />
 
-        {cameraLive &&
-          GESTURES.map((g) => {
-            const a = anchors[g];
-            if (!a || chips[g].length === 0) return null;
-            return (
-              <div
-                key={g}
-                className="pointer-events-none absolute flex -translate-y-full flex-col gap-1 pb-3"
-                style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
-              >
-                {chips[g].map((c) => (
-                  <span key={c.label} className="rounded-full bg-black/70 px-2.5 py-0.5 font-mono text-xs text-white backdrop-blur-xl">
-                    {c.label} {c.value}
-                  </span>
-                ))}
-              </div>
-            );
-          })}
+          {cameraLive &&
+            GESTURES.map((g) => {
+              const a = anchors[g];
+              if (!a || chips[g].length === 0) return null;
+              return (
+                <div
+                  key={g}
+                  className="pointer-events-none absolute flex -translate-y-full flex-col gap-1 pb-3"
+                  style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
+                >
+                  {chips[g].map((c) => (
+                    <span key={c.label} className="rounded-full bg-black/70 px-2.5 py-0.5 font-mono text-xs text-white backdrop-blur-xl">
+                      {c.label} {c.value}
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
 
-        <StageOverlay status={status} inputMode={inputMode} noHands={noHands} calStep={calStep} onEnable={startCamera} />
+          <StageOverlay status={status} inputMode={inputMode} noHands={noHands} calStep={calStep} onEnable={startCamera} />
 
-        <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
-          {GESTURES.map((g) => (
-            <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} lock={lockUi[g]} />
-          ))}
-        </div>
+          <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
+            {GESTURES.map((g) => (
+              <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} lock={lockUi[g]} />
+            ))}
+          </div>
 
-        {holdHint && (
-          <p
-            className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm font-medium text-white backdrop-blur-xl"
-            role="status"
-          >
-            {holdHint}
-          </p>
-        )}
-
-        {onToggleExpand && (
-          <button
-            type="button"
-            onClick={onToggleExpand}
-            aria-label={expanded ? "Exit full view" : "Expand camera"}
-            title={expanded ? "Exit full view (Esc)" : "Expand camera"}
-            className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
-          >
-            <svg
-              viewBox="0 0 20 20"
-              className="size-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
+          {holdHint && (
+            <p
+              className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm font-medium text-white backdrop-blur-xl"
+              role="status"
             >
-              {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
-            </svg>
-          </button>
-        )}
+              {holdHint}
+            </p>
+          )}
+
+          {onToggleExpand && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-label={expanded ? "Exit full view" : "Expand camera"}
+              title={expanded ? "Exit full view (Esc)" : "Expand camera"}
+              className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                className="size-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       <div
