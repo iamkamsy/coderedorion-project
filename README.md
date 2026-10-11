@@ -43,12 +43,13 @@ cp .env.example .env.local
 
 Fill in whichever keys you have. Get them from the team password manager, never from chat. **Every key is optional.** Without one, that feature shows a clear error, and the pinch and rack keep working.
 
-| Variable                                                         | Used for                                                                                           |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `GEMINI_API_KEY`                                                 | Chat to mapping (`/api/mapping`)                                                                   |
-| `GEMINI_MODEL`                                                   | Optional model override (default `gemini-3.1-flash-lite`, fast and light on free-tier rate limits) |
-| `DATABASE_URL`                                                   | TigerData Postgres: event stream, saved mappings, dashboard                                        |
-| `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `BACKBOARD_API_KEY` | Not used yet (voice and memory, WP8)                                                               |
+| Variable                                    | Used for                                                                                           |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`                            | Chat to mapping (`/api/mapping`)                                                                   |
+| `GEMINI_MODEL`                              | Optional model override (default `gemini-3.1-flash-lite`, fast and light on free-tier rate limits) |
+| `DATABASE_URL`                              | TigerData Postgres: event stream, saved mappings, dashboard                                        |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID` | Lesson coach voice (`/api/speak`), in the agent's configured voice                                 |
+| `BACKBOARD_API_KEY`                         | Not used yet (memory)                                                                              |
 
 ### 4. Run it
 
