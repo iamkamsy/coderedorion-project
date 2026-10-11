@@ -89,7 +89,7 @@ export function Dashboard() {
           </div>
 
           {rows.length === 0 ? (
-            <p className="rounded-[var(--radius-panel)] border border-border bg-panel p-6 text-center text-muted">
+            <p className="rounded-[var(--radius-panel)] glass p-6 text-center text-muted">
               No activity yet. Start audio on the rack and pinch to generate events.
             </p>
           ) : (
@@ -117,7 +117,7 @@ export function Dashboard() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+    <div className="rounded-[var(--radius-panel)] glass p-4">
       <p className="text-xs text-muted">{label}</p>
       <p className="mt-1 font-mono text-2xl">{value}</p>
     </div>
@@ -137,7 +137,7 @@ function ParamChart({ paramKey, rows }: { paramKey: string; rows: Row[] }) {
   const fmt = (v: number) => formatParam(spec, v);
 
   return (
-    <figure className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+    <figure className="rounded-[var(--radius-panel)] glass p-4">
       <figcaption className="mb-2 text-sm font-medium">
         {paramTitle(plugin, param)} <span className="text-muted">· average per minute</span>
       </figcaption>
@@ -192,7 +192,7 @@ function ParamChart({ paramKey, rows }: { paramKey: string; rows: Row[] }) {
 
 function ActivityTable({ rows }: { rows: Row[] }) {
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-border bg-panel">
+    <div className="overflow-x-auto rounded-[var(--radius-panel)] glass">
       <table className="w-full text-left text-sm">
         <thead className="text-muted">
           <tr>
