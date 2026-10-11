@@ -9,6 +9,9 @@ import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder";
+import { speak, stopSpeaking, useCoachVoice } from "@/lib/speech";
+import { toLastSentence } from "@/lib/text";
+import { THINKING_PHRASES, ThinkingIndicator } from "./ThinkingIndicator";
 import { Collapsible } from "./Collapsible";
 
 export interface Proposal {
@@ -20,6 +23,21 @@ export interface Proposal {
 interface Message {
   role: "user" | "assistant" | "error";
   text: string;
+  /** Still arriving from the stream. */
+  streaming?: boolean;
+}
+
+/** Read a streamed text response, reporting the text so far after every chunk. */
+async function readStream(body: ReadableStream<Uint8Array>, onText: (textSoFar: string) => void): Promise<string> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return text + decoder.decode();
+    text += decoder.decode(value, { stream: true });
+    onText(text);
+  }
 }
 
 const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
@@ -46,6 +64,9 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const voiceOn = useCoachVoice();
+  /** Asked, but no words have streamed back yet. */
+  const [waiting, setWaiting] = useState(false);
   const [voice, setVoice] = useState<"idle" | "recording" | "transcribing">("idle");
   const recordingRef = useRef<Recording | null>(null);
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,6 +84,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
   const ask = async (question: string) => {
     setMessages((m) => [...m, { role: "user", text: question }]);
     setLoading(true);
+    setWaiting(true);
     try {
       const res = await fetch("/api/explain", {
         method: "POST",
@@ -70,15 +92,30 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
         body: JSON.stringify({ question, tutorial: lesson?.slug }),
         signal: AbortSignal.timeout(20000),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "The AI could not answer right now.");
-      setMessages((m) => [...m, { role: "assistant", text: String(data.answer) }]);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "The AI could not answer right now.");
+      }
+      const answer = await readStream(res.body, (text) => {
+        setWaiting(false);
+        setMessages((m) => {
+          const last = m.at(-1);
+          return last?.streaming ? [...m.slice(0, -1), { ...last, text }] : [...m, { role: "assistant", text, streaming: true }];
+        });
+      });
+      if (!answer.trim()) throw new Error("The AI could not answer right now.");
+      // A stream that stopped midway (length cap or dropped connection) ends on its last full sentence.
+      const final = toLastSentence(answer.trim());
+      setMessages((m) => [...m.slice(0, -1), { role: "assistant", text: final }]);
       onAsked?.();
+      // In a lesson with the voice coach on, the coach reads the answer aloud.
+      if (lesson && voiceOn) void speak(final);
     } catch (err) {
       const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
-      setMessages((m) => [...m, { role: "error", text: `${msg} The lesson keeps working without it.` }]);
+      setMessages((m) => [...m.filter((x) => !x.streaming), { role: "error", text: `${msg} The lesson keeps working without it.` }]);
     } finally {
       setLoading(false);
+      setWaiting(false);
     }
   };
 
@@ -110,6 +147,8 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
   const toggleRecording = async () => {
     if (voice === "recording") return finishRecording();
     if (voice !== "idle" || loading) return;
+    // Silence the coach first so the mic doesn't pick up its voice.
+    stopSpeaking();
     try {
       recordingRef.current = await startRecording();
       setVoice("recording");
@@ -192,14 +231,18 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
               {m.text}
             </p>
           ))}
-          {voice !== "idle" && (
-            <p className="text-[13px] text-muted" role="status">
-              {voice === "recording" ? "Listening... tap the mic again to send." : "Transcribing what you said..."}
+          {voice === "recording" && (
+            <p className="flex items-center gap-1.5 text-[13px] text-muted" role="status">
+              Listening, tap the mic again to send
+              <span className="flex items-end gap-[3px] pb-0.5" aria-hidden>
+                <span className="wave-dot" />
+                <span className="wave-dot" />
+                <span className="wave-dot" />
+              </span>
             </p>
           )}
-          {loading && (
-            <p className="text-[13px] text-muted">{mode === "ask" ? "Thinking it through..." : "Thinking about your sound..."}</p>
-          )}
+          {voice === "transcribing" && <ThinkingIndicator phrases={THINKING_PHRASES.transcribe} />}
+          {loading && (mode === "map" || waiting) && <ThinkingIndicator phrases={THINKING_PHRASES[mode]} />}
           {proposal && (
             <MappingCard
               proposal={proposal}

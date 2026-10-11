@@ -1,11 +1,10 @@
 import "server-only";
-import { ApiError, FinishReason, GoogleGenAI, type GenerateContentParameters } from "@google/genai";
+import { ApiError, GoogleGenAI, type GenerateContentParameters } from "@google/genai";
 import { z } from "zod";
 import { MAPPABLE_SPECS, PLUGINS, type ParamSpec } from "@/audio/paramSchema";
 import { STUDIO_MODULES, type EffectId } from "@/audio/rackSpec";
 import { CURVES, GESTURES, MAX_TARGETS_PER_GESTURE, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
-import { toLastSentence } from "@/lib/text";
 
 const TIMEOUT_MS = 15000;
 /** Fast and light on free-tier rate limits: about 1.5 s to transcribe a short clip, under 1 s for text. */
@@ -65,20 +64,24 @@ function isTransient(err: unknown): boolean {
   return err instanceof ApiError && (err.status === 503 || err.status === 429);
 }
 
-/** generateContent with one retry when Gemini is briefly overloaded or rate limited. */
-async function generate(ai: GoogleGenAI, params: GenerateContentParameters) {
+/** Run a Gemini call, retrying once when Gemini is briefly overloaded or rate limited. */
+async function withRetry<T>(call: () => Promise<T>): Promise<T> {
   try {
-    return await ai.models.generateContent(params);
+    return await call();
   } catch (err) {
     if (!isTransient(err)) throw err;
     await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
     try {
-      return await ai.models.generateContent(params);
+      return await call();
     } catch (retryErr) {
       if (isTransient(retryErr)) throw new GeminiBusyError("Gemini is overloaded or rate limited");
       throw retryErr;
     }
   }
+}
+
+function generate(ai: GoogleGenAI, params: GenerateContentParameters) {
+  return withRetry(() => ai.models.generateContent(params));
 }
 
 /**
@@ -145,8 +148,12 @@ export interface ExplainContext {
   modules: readonly EffectId[];
 }
 
-/** A short, beginner-friendly answer to a question about the effects in the user's rack. */
-export async function explainConcept(question: string, context: ExplainContext): Promise<string> {
+/**
+ * A short, beginner-friendly answer to a question about the effects in the user's rack,
+ * streamed as it is generated. Streaming costs the same tokens as waiting for the whole
+ * answer; the first words just arrive sooner. Stops after EXPLAIN_MAX_CHARS.
+ */
+export async function streamExplanation(question: string, context: ExplainContext): Promise<AsyncGenerator<string>> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiUnavailableError("GEMINI_API_KEY is not configured");
 
@@ -156,29 +163,39 @@ export async function explainConcept(question: string, context: ExplainContext):
     .join("\n");
 
   const ai = new GoogleGenAI({ apiKey });
-  const response = await generate(ai, {
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
-    contents: question,
-    config: {
-      systemInstruction: `You are a friendly audio production teacher helping a beginner in a short interactive lesson called "${context.title}".
+  // Retries cover the initial request, which is where 503 and 429 show up.
+  const chunks = await withRetry(() =>
+    ai.models.generateContentStream({
+      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      contents: question,
+      config: {
+        systemInstruction: `You are a friendly audio production teacher helping a beginner in a short interactive lesson called "${context.title}".
 The lesson's idea: ${context.idea}
 The rack in front of them has these controls:
 ${params}
 Answer in at most 90 words of plain text, no markdown or lists. Use everyday words and one concrete listening tip that uses the controls above.
 If the question is not about sound, music or these effects, say briefly that you can only help with this lesson.`,
-      temperature: 0.5,
-      // Generous on purpose: thinking models spend part of this budget before answering.
-      // Length is held down by the prompt and EXPLAIN_MAX_CHARS instead.
-      maxOutputTokens: 2048,
-      abortSignal: AbortSignal.timeout(TIMEOUT_MS),
-    },
-  });
+        temperature: 0.5,
+        // Generous on purpose: thinking models spend part of this budget before answering.
+        // Length is held down by the prompt and EXPLAIN_MAX_CHARS instead.
+        maxOutputTokens: 2048,
+        abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+      },
+    }),
+  );
 
-  let answer = (response.text ?? "").trim();
-  if (!answer) throw new Error("Gemini returned an empty answer");
-  const truncated = response.candidates?.[0]?.finishReason === FinishReason.MAX_TOKENS || answer.length > EXPLAIN_MAX_CHARS;
-  if (truncated) answer = toLastSentence(answer.slice(0, EXPLAIN_MAX_CHARS));
-  return answer;
+  return (async function* () {
+    let sent = 0;
+    for await (const chunk of chunks) {
+      const text = chunk.text ?? "";
+      if (!text) continue;
+      const room = EXPLAIN_MAX_CHARS - sent;
+      if (room <= 0) return;
+      const piece = text.slice(0, room);
+      sent += piece.length;
+      yield piece;
+    }
+  })();
 }
 
 const TRANSCRIBE_MAX_CHARS = 500;
