@@ -31,7 +31,9 @@ export function RackPanel({ modules, values, bound, onManualChange, rack }: Prop
               key={plugin.id}
               level="item"
               title={plugin.label}
-              badge={liveCount(plugin.id) > 0 && <LiveBadge count={liveCount(plugin.id)} />}
+              badge={
+                plugin.id === "input" ? <GateLight rack={rack} /> : liveCount(plugin.id) > 0 && <LiveBadge count={liveCount(plugin.id)} />
+              }
               defaultOpen
             >
               <PluginParams pluginId={plugin.id} values={values} bound={bound} onManualChange={onManualChange} />
