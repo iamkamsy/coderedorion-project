@@ -199,67 +199,72 @@ export function Stage(props: Props) {
   const noHands = cameraLive && values.pinch_left === null && values.pinch_right === null;
 
   return (
-    <section className="flex shrink-0 flex-col gap-3" aria-label="Camera stage" data-tour="stage">
-      <div
-        className={`${expanded ? "fixed inset-x-4 top-20 bottom-4 z-30" : "relative aspect-video w-full shrink-0"} overflow-hidden rounded-[var(--radius-panel)] glass transition-[outline-color] duration-300 ${inputMode === "fake" ? "cursor-ns-resize" : ""} ${dragging || cameraLive ? "stage-live" : ""}`}
-        onPointerDown={(e) => {
-          if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
-          e.currentTarget.setPointerCapture(e.pointerId);
-          setDragging(true);
-        }}
-        onPointerUp={() => setDragging(false)}
-        onPointerMove={onPointer}
-      >
-        <video ref={videoRef} className="absolute inset-0 h-full w-full -scale-x-100 object-cover" playsInline muted />
-        <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover" />
-
-        {cameraLive &&
-          GESTURES.map((g) => {
-            const a = anchors[g];
-            if (!a || chips[g].length === 0) return null;
-            return (
-              <div
-                key={g}
-                className="pointer-events-none absolute flex -translate-y-full flex-col gap-1 pb-3"
-                style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
-              >
-                {chips[g].map((c) => (
-                  <span key={c.label} className="rounded-full bg-black/70 px-2.5 py-0.5 font-mono text-xs text-white backdrop-blur-xl">
-                    {c.label} {c.value}
-                  </span>
-                ))}
-              </div>
-            );
-          })}
-
-        <StageOverlay status={status} inputMode={inputMode} noHands={noHands} calStep={calStep} onEnable={startCamera} />
-
-        <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
-          {GESTURES.map((g) => (
-            <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} />
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={onToggleExpand}
-          aria-label={expanded ? "Exit full view" : "Expand camera"}
-          title={expanded ? "Exit full view (Esc)" : "Expand camera"}
-          className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
+    <section className="flex shrink-0 flex-col gap-3 lg:min-h-0 lg:flex-1 lg:shrink" aria-label="Camera stage" data-tour="stage">
+      {/* From lg up the camera takes whatever height the column has left and stays 16:9 inside it, so the
+          controls and spectrum below never push the page into scrolling. Size containment only when not
+          expanded: it would trap the fixed-position expanded view inside this box. */}
+      <div className={expanded ? "" : "flex justify-center lg:min-h-0 lg:flex-1 lg:[container-type:size]"}>
+        <div
+          className={`${expanded ? "fixed inset-x-4 top-20 bottom-4 z-30" : "relative aspect-video w-full shrink-0 lg:w-[min(100cqw,calc(100cqh*16/9))]"} overflow-hidden rounded-[var(--radius-panel)] glass transition-[outline-color] duration-300 ${inputMode === "fake" ? "cursor-ns-resize" : ""} ${dragging ? "stage-live" : ""}`}
+          onPointerDown={(e) => {
+            if (inputMode !== "fake" || (e.target as HTMLElement).closest("button")) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDragging(true);
+          }}
+          onPointerUp={() => setDragging(false)}
+          onPointerMove={onPointer}
         >
-          <svg
-            viewBox="0 0 20 20"
-            className="size-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
+          <video ref={videoRef} className="absolute inset-0 h-full w-full -scale-x-100 object-cover" playsInline muted />
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover" />
+
+          {cameraLive &&
+            GESTURES.map((g) => {
+              const a = anchors[g];
+              if (!a || chips[g].length === 0) return null;
+              return (
+                <div
+                  key={g}
+                  className="pointer-events-none absolute flex -translate-y-full flex-col gap-1 pb-3"
+                  style={{ left: `${a.x * 100}%`, top: `${a.y * 100}%` }}
+                >
+                  {chips[g].map((c) => (
+                    <span key={c.label} className="rounded-full bg-black/70 px-2.5 py-0.5 font-mono text-xs text-white backdrop-blur-xl">
+                      {c.label} {c.value}
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
+
+          <StageOverlay status={status} inputMode={inputMode} noHands={noHands} calStep={calStep} onEnable={startCamera} />
+
+          <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">
+            {GESTURES.map((g) => (
+              <PinchMeter key={g} label={GESTURE_LABEL[g]} value={values[g]} />
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={onToggleExpand}
+            aria-label={expanded ? "Exit full view" : "Expand camera"}
+            title={expanded ? "Exit full view (Esc)" : "Expand camera"}
+            className="absolute right-3 bottom-3 flex size-9 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white backdrop-blur-xl transition-colors hover:bg-black/65"
           >
-            {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
-          </svg>
-        </button>
+            <svg
+              viewBox="0 0 20 20"
+              className="size-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              {expanded ? <path d="M8 3v5H3M12 3v5h5M8 17v-5H3M12 17v-5h5" /> : <path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" />}
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div

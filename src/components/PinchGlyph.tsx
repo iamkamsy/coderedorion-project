@@ -1,4 +1,4 @@
-/** Gesture Rack logo mark: a hand mid-pinch with the accent dot where the fingers meet. */
+/** Gesture Labs logo mark: a hand mid-pinch with the accent dot where the fingers meet. */
 export function PinchGlyph() {
   return (
     <svg viewBox="0 0 20 20" className="size-5" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" aria-hidden>

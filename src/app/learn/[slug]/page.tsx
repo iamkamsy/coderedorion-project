@@ -11,7 +11,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: PageProps<"/learn/[slug]">): Promise<Metadata> {
   const { slug } = await params;
   const t = getTutorial(slug);
-  return t ? { title: `${t.title} · Gesture Rack`, description: t.tagline } : {};
+  return t ? { title: `${t.title} · Gesture Labs`, description: t.tagline } : {};
 }
 
 export default async function TutorialPage({ params }: PageProps<"/learn/[slug]">) {

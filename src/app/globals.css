@@ -148,7 +148,7 @@ input[type="range"].cool {
     0 16px 36px -14px rgb(0 0 0 / 0.45);
 }
 
-/* Camera window while a hand (or the fake pinch) is driving the rack: a red edge and glow. */
+/* Camera window while the fake pinch is being dragged: a red edge and glow. */
 .stage-live {
   outline: 1.5px solid rgb(250 45 72 / 0.6);
   outline-offset: -1px;
