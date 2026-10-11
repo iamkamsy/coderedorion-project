@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PinchGlyph } from "./PinchGlyph";
 
-/** The app's home link: the Gesture Rack mark plus a Home label, the same on every page. */
+/** The app's home link: the Gesture Labs mark plus a Home label, the same on every page. */
 export function HomeButton({ label = true }: { label?: boolean }) {
   return (
     <Link

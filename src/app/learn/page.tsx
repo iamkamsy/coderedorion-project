@@ -6,7 +6,7 @@ import { LessonBadge } from "@/components/LessonBadge";
 import { TUTORIALS } from "@/tutorials";
 
 export const metadata: Metadata = {
-  title: "Learn · Gesture Rack",
+  title: "Learn · Gesture Labs",
   description: "Bite-sized lessons on audio effects. Shape the sound with your hands.",
 };
 

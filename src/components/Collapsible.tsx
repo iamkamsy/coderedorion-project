@@ -11,6 +11,8 @@ interface Props {
   level?: "section" | "item";
   /** Controls beside the title, such as an on/off switch. Kept outside the toggle button. */
   actions?: React.ReactNode;
+  /** Keep the header in place and scroll only the body when the box runs out of height. */
+  scrollBody?: boolean;
   children: React.ReactNode;
 }
 
@@ -28,13 +30,13 @@ const STYLES = {
 };
 
 /** A dropdown that slides open and closed. Animates the grid row from 0fr to 1fr, which works in every browser. */
-export function Collapsible({ title, badge, defaultOpen = false, level = "section", actions, children }: Props) {
+export function Collapsible({ title, badge, defaultOpen = false, level = "section", actions, scrollBody = false, children }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
   const s = STYLES[level];
   return (
-    <div className={s.wrapper}>
-      <div className="flex items-center gap-2">
+    <div className={`${s.wrapper} ${scrollBody ? "flex min-h-0 flex-col" : ""}`}>
+      <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           aria-expanded={open}
@@ -62,9 +64,9 @@ export function Collapsible({ title, badge, defaultOpen = false, level = "sectio
       </div>
       <div
         id={bodyId}
-        className={`grid transition-[grid-template-rows] duration-250 ease-out motion-reduce:transition-none ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+        className={`grid transition-[grid-template-rows] duration-250 ease-out motion-reduce:transition-none ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"} ${scrollBody ? "min-h-0" : ""}`}
       >
-        <div className="min-h-0 overflow-hidden" inert={!open}>
+        <div className={`min-h-0 ${scrollBody ? "overflow-y-auto" : "overflow-hidden"}`} inert={!open}>
           <div className={s.body}>{children}</div>
         </div>
       </div>
