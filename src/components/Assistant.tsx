@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
-import type { Mapping } from "@/mapping/types";
+import { getParamSpec, specsForPlugin, PLUGINS } from "@/audio/paramSchema";
+import type { MappingPreset } from "@/mapping/defaults";
+import { isTargetBound } from "@/mapping/engine";
+import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
@@ -18,15 +20,19 @@ interface Message {
   text: string;
 }
 
-const PRESETS = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+const INTENT_SUGGESTIONS = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
 
 interface Props {
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
-  onResetDefault: () => void;
+  presets: MappingPreset[];
+  activePresetId: string | null;
+  onSelectPreset: (preset: MappingPreset) => void;
+  mapping: Mapping;
+  onToggleParam: (gesture: Gesture, plugin: string, param: string) => void;
 }
 
-export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
+export function Assistant({ activeSummary, onApprove, presets, activePresetId, onSelectPreset, mapping, onToggleParam }: Props) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,13 +69,31 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
   return (
     <aside className="flex flex-1 flex-col gap-3 xl:min-h-0" aria-label="Assistant">
       <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
-          <button type="button" onClick={onResetDefault} className="text-xs text-muted hover:text-text">
-            Reset to default
-          </button>
-        </div>
+        <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
         <p className="mt-2 text-sm">{activeSummary}</p>
+        <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Mapping presets">
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onSelectPreset(preset)}
+              aria-pressed={activePresetId === preset.id}
+              className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                activePresetId === preset.id
+                  ? "border-accent/60 bg-accent/10 text-accent"
+                  : "border-border text-muted hover:border-accent/60 hover:text-text"
+              }`}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+          <p className="text-[11px] text-muted">Choose what each hand controls:</p>
+          {GESTURES.map((g) => (
+            <HandPicker key={g} gesture={g} mapping={mapping} onToggle={onToggleParam} />
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel xl:min-h-0">
@@ -109,7 +133,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
         </div>
 
         <div className="flex flex-wrap gap-1.5 border-t border-border px-4 pt-3">
-          {PRESETS.map((p) => (
+          {INTENT_SUGGESTIONS.map((p) => (
             <button
               key={p}
               type="button"
@@ -154,6 +178,44 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
         </form>
       </div>
     </aside>
+  );
+}
+
+function HandPicker({
+  gesture,
+  mapping,
+  onToggle,
+}: {
+  gesture: Gesture;
+  mapping: Mapping;
+  onToggle: (gesture: Gesture, plugin: string, param: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-xs font-medium">{GESTURE_LABEL[gesture]}</p>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${GESTURE_LABEL[gesture]} targets`}>
+        {PLUGINS.flatMap((plugin) =>
+          specsForPlugin(plugin.id).map((spec) => {
+            const bound = isTargetBound(mapping, gesture, spec.plugin, spec.param);
+            return (
+              <button
+                key={`${spec.plugin}.${spec.param}`}
+                type="button"
+                onClick={() => onToggle(gesture, spec.plugin, spec.param)}
+                aria-pressed={bound}
+                className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                  bound
+                    ? "border-accent/60 bg-accent/10 text-accent"
+                    : "border-border text-muted hover:border-accent/60 hover:text-text"
+                }`}
+              >
+                {plugin.label} {spec.label}
+              </button>
+            );
+          }),
+        )}
+      </div>
+    </div>
   );
 }
 

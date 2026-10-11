@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
 import type { Rack } from "@/audio/rack";
 import { defaultParamValues, getParamSpec, PLUGINS } from "@/audio/paramSchema";
-import { DEFAULT_MAPPING } from "@/mapping/defaults";
-import { applyMapping, boundParams, computeChanges } from "@/mapping/engine";
+import { DEFAULT_MAPPING, DEFAULT_SUMMARY, MAPPING_PRESETS, type MappingPreset } from "@/mapping/defaults";
+import { applyMapping, boundParams, computeChanges, toggleTarget } from "@/mapping/engine";
 import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
-import { formatParam } from "@/lib/format";
+import { formatParam, summarizeMapping } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { Assistant, type Proposal } from "./Assistant";
 import { RackPanel } from "./RackPanel";
@@ -17,7 +17,6 @@ import { Spectrum } from "./Spectrum";
 import { Stage, type CameraStatus, type Chip, type InputMode } from "./Stage";
 import { TopBar, type AudioState } from "./TopBar";
 
-const DEFAULT_SUMMARY = "Right pinch opens reverb and delay feedback together. Left pinch sweeps the filter.";
 const CONSENT_KEY = "gesture-rack.data-consent";
 
 const consentListeners = new Set<() => void>();
@@ -54,6 +53,7 @@ export function Studio() {
   const [trackedValues, setTrackedValues] = useState<GestureValues>({ pinch_left: null, pinch_right: null });
   const [mapping, setMapping] = useState<Mapping>(DEFAULT_MAPPING);
   const [summary, setSummary] = useState(DEFAULT_SUMMARY);
+  const [activePresetId, setActivePresetId] = useState<string | null>(MAPPING_PRESETS[0].id);
   const [params, setParams] = useState<Record<string, number>>(defaultParamValues);
   const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
@@ -75,6 +75,7 @@ export function Studio() {
         if (valid?.ok) {
           setMapping(valid.mapping);
           setSummary(data.active.name);
+          setActivePresetId(null);
         }
       })
       .catch(() => {});
@@ -170,6 +171,7 @@ export function Studio() {
   const approve = useCallback((p: Proposal) => {
     setMapping(p.mapping);
     setSummary(p.summary);
+    setActivePresetId(null);
     fetch("/api/mappings", {
       method: "POST",
       headers: ownerHeaders(),
@@ -177,6 +179,25 @@ export function Studio() {
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
   }, []);
+
+  const selectPreset = useCallback((preset: MappingPreset) => {
+    setMapping(preset.mapping);
+    setSummary(preset.summary);
+    setActivePresetId(preset.id);
+  }, []);
+
+  // Hand-pick what a gesture controls. No-ops if it would remove the mapping's last target
+  // or exceed the per-gesture target limit; toggleTarget returns null in both cases.
+  const toggleParam = useCallback(
+    (gesture: Gesture, plugin: string, param: string) => {
+      const next = toggleTarget(mapping, gesture, plugin, param);
+      if (!next) return;
+      setMapping(next);
+      setSummary(summarizeMapping(next));
+      setActivePresetId(null);
+    },
+    [mapping],
+  );
 
   const changeConsent = useCallback((v: boolean) => {
     consentStore.set(v);
@@ -237,7 +258,11 @@ export function Studio() {
           <Assistant
             activeSummary={summary}
             onApprove={approve}
-            onResetDefault={() => (setMapping(DEFAULT_MAPPING), setSummary(DEFAULT_SUMMARY))}
+            presets={MAPPING_PRESETS}
+            activePresetId={activePresetId}
+            onSelectPreset={selectPreset}
+            mapping={mapping}
+            onToggleParam={toggleParam}
           />
         </div>
         <div className="order-1 flex flex-col xl:min-h-0 gap-4 lg:col-start-1 lg:row-start-1 xl:col-start-2 xl:overflow-y-auto">
