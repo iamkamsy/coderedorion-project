@@ -11,7 +11,7 @@ interface Props {
 export function PresetBar({ presets, activeId, onLoad }: Props) {
   return (
     <div
-      className="flex flex-wrap items-center gap-2 rounded-[var(--radius-panel)] border border-border bg-panel px-4 py-3"
+      className="flex flex-wrap items-center gap-1.5 rounded-[var(--radius-panel)] glass px-3.5 py-2.5"
       data-tour="preset-bar"
       role="group"
       aria-label="Presets"
@@ -24,7 +24,7 @@ export function PresetBar({ presets, activeId, onLoad }: Props) {
           onClick={() => onLoad(p)}
           title={p.description}
           aria-pressed={activeId === p.id}
-          className={`rounded-full border px-3 py-1 text-sm ${activeId === p.id ? "border-accent/60 bg-accent/15 text-accent" : "border-border text-muted hover:text-text"}`}
+          className={`rounded-full px-3 py-1 text-[13px] transition-colors ${activeId === p.id ? "bg-ink font-semibold text-on-ink" : "border border-border bg-inset text-muted hover:text-text"}`}
         >
           {p.name}
         </button>

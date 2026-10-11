@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Rack } from "@/audio/rack";
-import { PLUGINS, paramKey, specsForPlugin, type ParamSpec } from "@/audio/paramSchema";
+import { PLUGINS, paramKey, specsForPlugin, type PluginId } from "@/audio/paramSchema";
 import { DIVISIONS, isEffectId, rackPlugins, type Division, type EffectId } from "@/audio/rackSpec";
 import type { Gesture } from "@/mapping/types";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
+import { Collapsible } from "./Collapsible";
 
 interface Props {
   modules: readonly EffectId[];
@@ -23,105 +24,137 @@ interface Props {
   onDryHeldChange: (held: boolean) => void;
 }
 
+/** All effects in one compact glass box, each effect a dropdown, with the output meter at the bottom. */
 export function RackPanel(props: Props) {
   const { modules, values, bound, onManualChange, rack, showInput, bypassed, onBypassChange, division, onDivisionChange } = props;
-  const shown = new Set<string>(rackPlugins(modules));
-  if (!showInput) shown.delete("input");
-
+  const loaded = new Set<string>(rackPlugins(modules));
+  if (!showInput) loaded.delete("input");
+  const plugins = PLUGINS.filter((p) => loaded.has(p.id));
+  const liveCount = (pluginId: PluginId) => specsForPlugin(pluginId).filter((s) => bound.has(paramKey(s.plugin, s.param))).length;
+  const totalLive = plugins.reduce((n, p) => n + liveCount(p.id), 0);
   return (
-    <aside className="flex flex-col gap-3 xl:min-h-0 xl:overflow-y-auto" aria-label="Effects rack">
-      <ABButton held={props.dryHeld} onChange={props.onDryHeldChange} />
-      {PLUGINS.filter((p) => shown.has(p.id)).map((plugin) => {
-        const effect = isEffectId(plugin.id) ? plugin.id : null;
-        const off = effect !== null && bypassed.has(effect);
-        return (
-          <div
-            key={plugin.id}
-            data-tour={`module-${plugin.id}`}
-            className="rounded-[var(--radius-panel)] border border-border bg-panel p-4"
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className={`text-sm font-semibold tracking-wide uppercase ${off ? "text-muted/60" : "text-muted"}`}>{plugin.label}</h2>
-              {plugin.id === "input" && <GateLight rack={rack} />}
-              {effect && <BypassSwitch label={plugin.label} on={!off} onChange={(on) => onBypassChange(effect, !on)} />}
-            </div>
-            <div className={`flex flex-col gap-3 transition-opacity ${off ? "opacity-50" : ""}`}>
-              {specsForPlugin(plugin.id).map((spec) => {
-                const key = paramKey(spec.plugin, spec.param);
-                const synced = key === "delay.delayTime" && division !== null;
-                return (
-                  <ParamSlider
-                    key={key}
-                    spec={spec}
-                    pluginLabel={plugin.label}
-                    value={values[key]}
-                    gesture={bound.get(key)}
-                    lockedLabel={synced && division ? `Synced ${DIVISIONS[division].label}` : null}
-                    onChange={(v) => onManualChange(spec.plugin, spec.param, v)}
-                  />
-                );
-              })}
-              {plugin.id === "delay" && <DivisionPicker value={division} onChange={onDivisionChange} />}
-            </div>
-          </div>
-        );
-      })}
-      <OutputMeter rack={rack} />
-    </aside>
+    <section className="rounded-[var(--radius-panel)] glass" aria-label="Effects rack">
+      <Collapsible title="Effects" badge={totalLive > 0 && <LiveBadge count={totalLive} />} defaultOpen>
+        <ABButton held={props.dryHeld} onChange={props.onDryHeldChange} />
+        <div className="flex flex-col">
+          {plugins.map((plugin) => {
+            const effect = isEffectId(plugin.id) ? plugin.id : null;
+            const off = effect !== null && bypassed.has(effect);
+            return (
+              <div key={plugin.id} data-tour={`module-${plugin.id}`}>
+                <Collapsible
+                  level="item"
+                  title={plugin.label}
+                  badge={liveCount(plugin.id) > 0 && <LiveBadge count={liveCount(plugin.id)} />}
+                  actions={
+                    plugin.id === "input" ? (
+                      <GateLight rack={rack} />
+                    ) : (
+                      effect && <BypassSwitch label={plugin.label} on={!off} onChange={(on) => onBypassChange(effect, !on)} />
+                    )
+                  }
+                  defaultOpen
+                >
+                  <div className={`transition-opacity ${off ? "opacity-45" : ""}`}>
+                    <PluginParams pluginId={plugin.id} values={values} bound={bound} division={division} onManualChange={onManualChange} />
+                    {plugin.id === "delay" && <DivisionPicker value={division} onChange={onDivisionChange} />}
+                  </div>
+                </Collapsible>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-1 border-t border-border pt-2.5" data-tour="output-meter">
+          <OutputMeter rack={rack} />
+        </div>
+      </Collapsible>
+    </section>
   );
 }
 
-function ParamSlider({
-  spec,
-  pluginLabel,
-  value,
-  gesture,
-  lockedLabel,
-  onChange,
-}: {
-  spec: ParamSpec;
-  pluginLabel: string;
-  value: number;
-  gesture: Gesture | undefined;
-  lockedLabel: string | null;
-  onChange: (value: number) => void;
-}) {
-  // Exponential params get a log-scaled slider so the useful range is not squashed.
-  const logScale = spec.curve === "exp" && spec.min > 0;
-  const toSlider = (v: number) =>
-    logScale ? Math.log(v / spec.min) / Math.log(spec.max / spec.min) : (v - spec.min) / (spec.max - spec.min);
-  const fromSlider = (t: number) => (logScale ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min));
-  const driven = !!gesture || !!lockedLabel;
-
+function LiveBadge({ count }: { count: number }) {
   return (
-    <label className="flex flex-col gap-1" data-tour={`param-${spec.plugin}.${spec.param}`}>
-      <span className="flex items-center justify-between text-sm">
-        <span className="flex items-center gap-2" title={spec.description}>
-          {spec.label}
-          {gesture && (
-            <span
-              className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent"
-              title={`Driven by ${GESTURE_LABEL[gesture]}`}
-            >
-              {GESTURE_LABEL[gesture]}
+    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium tracking-normal text-accent-text normal-case">
+      {count} live
+    </span>
+  );
+}
+
+function PluginParams({
+  pluginId,
+  values,
+  bound,
+  division,
+  onManualChange,
+}: {
+  pluginId: PluginId;
+  values: Record<string, number>;
+  bound: Map<string, Gesture>;
+  division: Division | null;
+  onManualChange: (plugin: string, param: string, value: number) => void;
+}) {
+  const plugin = PLUGINS.find((p) => p.id === pluginId);
+  return (
+    <div className="flex flex-col gap-1.5">
+      {specsForPlugin(pluginId).map((spec) => {
+        const key = paramKey(spec.plugin, spec.param);
+        const gesture = bound.get(key);
+        const synced = key === "delay.delayTime" && division !== null ? DIVISIONS[division].label : null;
+        const value = values[key];
+        // Exponential params get a log-scaled slider so the useful range is not squashed.
+        const logScale = spec.curve === "exp" && spec.min > 0;
+        const toSlider = (v: number) =>
+          logScale ? Math.log(v / spec.min) / Math.log(spec.max / spec.min) : (v - spec.min) / (spec.max - spec.min);
+        const fromSlider = (t: number) => (logScale ? spec.min * Math.pow(spec.max / spec.min, t) : spec.min + t * (spec.max - spec.min));
+        const name = `${plugin?.label ?? pluginId} ${spec.label}`;
+        return (
+          <label key={key} className="flex flex-col gap-0.5" data-tour={`param-${key}`}>
+            <span className="flex items-center justify-between text-[11px]">
+              <span className="flex items-center gap-2" title={spec.description}>
+                {spec.label}
+                {gesture && (
+                  <span
+                    className="rounded-full bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent-text"
+                    title={`Driven by ${GESTURE_LABEL[gesture]}`}
+                  >
+                    {GESTURE_LABEL[gesture]}
+                  </span>
+                )}
+                {synced && <span className="rounded-full bg-panel-raised px-1.5 py-px text-[10px] font-medium">Synced {synced}</span>}
+              </span>
+              <span className={`font-mono text-xs ${gesture ? "text-accent-text" : "text-muted"}`}>{formatParam(spec, value)}</span>
             </span>
-          )}
-          {lockedLabel && <span className="rounded-full bg-cool/15 px-2 py-0.5 text-[11px] font-medium text-cool">{lockedLabel}</span>}
-        </span>
-        <span className={`font-mono text-xs ${gesture ? "text-accent" : "text-muted"}`}>{formatParam(spec, value)}</span>
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.001}
-        value={toSlider(value)}
-        disabled={driven}
-        onChange={(e) => onChange(fromSlider(Number(e.target.value)))}
-        className={driven ? "" : "cool"}
-        aria-label={`${pluginLabel} ${spec.label}`}
-      />
-    </label>
+            {gesture || synced ? (
+              // Driven by a pinch (glowing red) or locked to the beat (neutral): a bar, not a greyed-out slider.
+              <span
+                role="meter"
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={toSlider(value)}
+                aria-label={gesture ? `${name}, driven by ${GESTURE_LABEL[gesture]}` : `${name}, synced to ${synced}`}
+                className={`my-1.5 h-1.5 overflow-hidden rounded-full ${gesture ? "bg-accent/15" : "bg-panel-raised"}`}
+              >
+                <span
+                  className={`block h-full rounded-full transition-[width] duration-75 ${gesture ? "bg-gradient-to-r from-accent to-accent-soft shadow-[0_0_8px_var(--accent)]" : "bg-cool"}`}
+                  style={{ width: `${toSlider(value) * 100}%` }}
+                />
+              </span>
+            ) : (
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.001}
+                value={toSlider(value)}
+                onChange={(e) => onManualChange(spec.plugin, spec.param, fromSlider(Number(e.target.value)))}
+                className="cool"
+                aria-label={name}
+              />
+            )}
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
@@ -132,13 +165,16 @@ function BypassSwitch({ label, on, onChange }: { label: string; on: boolean; onC
       role="switch"
       aria-checked={on}
       aria-label={`${label} ${on ? "on" : "bypassed"}`}
+      title={on ? `Bypass ${label}` : `Turn ${label} on`}
       onClick={() => onChange(!on)}
       data-tour={`bypass-${label.toLowerCase()}`}
-      className="flex items-center gap-2 text-[11px] text-muted hover:text-text"
+      className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted hover:text-text"
     >
-      {on ? "On" : "Bypassed"}
-      <span className={`relative h-4 w-7 rounded-full transition-colors ${on ? "bg-accent" : "bg-border"}`}>
-        <span className={`absolute top-0.5 size-3 rounded-full bg-text transition-[left] ${on ? "left-3.5" : "left-0.5"}`} />
+      {on ? "On" : "Off"}
+      <span
+        className={`relative h-4 w-7 rounded-full border transition-colors ${on ? "border-accent bg-accent" : "border-border bg-black/10"}`}
+      >
+        <span className={`absolute top-px size-3 rounded-full bg-white shadow transition-[left] ${on ? "left-3" : "left-px"}`} />
       </span>
     </button>
   );
@@ -147,9 +183,9 @@ function BypassSwitch({ label, on, onChange }: { label: string; on: boolean; onC
 function DivisionPicker({ value, onChange }: { value: Division | null; onChange: (d: Division | null) => void }) {
   const options: (Division | null)[] = [null, ...(Object.keys(DIVISIONS) as Division[])];
   return (
-    <div data-tour="delay-division">
-      <p className="mb-1 text-sm">Sync to beat</p>
-      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Delay sync">
+    <div className="mt-2" data-tour="delay-division">
+      <p className="mb-1 text-[11px]">Sync to beat</p>
+      <div className="flex flex-wrap gap-0.5 rounded-full bg-black/[0.06] p-0.5" role="radiogroup" aria-label="Delay sync">
         {options.map((d) => (
           <button
             key={d ?? "free"}
@@ -157,7 +193,7 @@ function DivisionPicker({ value, onChange }: { value: Division | null; onChange:
             role="radio"
             aria-checked={value === d}
             onClick={() => onChange(d)}
-            className={`rounded-md border px-2 py-0.5 font-mono text-xs ${value === d ? "border-cool/60 bg-cool/15 text-cool" : "border-border text-muted hover:text-text"}`}
+            className={`rounded-full px-2 py-0.5 font-mono text-[11px] transition-colors ${value === d ? "bg-white font-medium text-[#111] shadow-[0_1px_3px_rgb(0_0_0/0.14)]" : "text-muted hover:text-text"}`}
           >
             {d ? DIVISIONS[d].label : "Free"}
           </button>
@@ -189,10 +225,10 @@ function ABButton({ held, onChange }: { held: boolean; onChange: (held: boolean)
         if (e.key === " " || e.key === "Enter") onChange(false);
       }}
       onBlur={() => onChange(false)}
-      className={`rounded-[var(--radius-panel)] border px-4 py-3 text-left text-sm select-none ${held ? "border-cool/60 bg-cool/15 text-cool" : "border-border bg-panel hover:border-cool/40"}`}
+      className={`mb-2 w-full rounded-xl border px-3 py-2 text-left select-none transition-colors ${held ? "border-accent bg-accent/15" : "border-border bg-inset hover:border-accent/50"}`}
     >
-      <span className="font-medium">{held ? "Hearing the dry sound" : "Hold to hear it dry (A/B)"}</span>
-      <span className="block text-xs text-muted">Compare with and without effects</span>
+      <span className="block text-[13px] font-medium">{held ? "Hearing the dry sound" : "Hold to hear it dry (A/B)"}</span>
+      <span className="block text-[11px] text-muted">Compare with and without effects</span>
     </button>
   );
 }
@@ -246,8 +282,8 @@ function OutputMeter({ rack }: { rack: Rack | null }) {
   }, [rack]);
 
   return (
-    <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4" data-tour="output-meter">
-      <div className="mb-2 flex items-center justify-between text-sm">
+    <div>
+      <div className="mb-2 flex items-center justify-between text-xs">
         <span className="font-semibold tracking-wide text-muted uppercase">Output</span>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${limiting ? "bg-warn/20 text-warn" : "bg-border text-muted"}`}
