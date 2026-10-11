@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Rack } from "@/audio/rack";
 import { PLUGINS, paramKey, specsForPlugin, type PluginId } from "@/audio/paramSchema";
+import { rackPlugins, type EffectId } from "@/audio/rackSpec";
 import type { Gesture } from "@/mapping/types";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { Collapsible } from "./Collapsible";
 
 interface Props {
+  modules: readonly EffectId[];
   values: Record<string, number>;
   bound: Map<string, Gesture>;
   onManualChange: (plugin: string, param: string, value: number) => void;
@@ -15,14 +17,16 @@ interface Props {
 }
 
 /** All effects in one compact glass box, each effect a dropdown, with the output meter at the bottom. */
-export function RackPanel({ values, bound, onManualChange, rack }: Props) {
+export function RackPanel({ modules, values, bound, onManualChange, rack }: Props) {
+  const loaded = new Set<string>(rackPlugins(modules));
+  const plugins = PLUGINS.filter((p) => loaded.has(p.id));
   const liveCount = (pluginId: PluginId) => specsForPlugin(pluginId).filter((s) => bound.has(paramKey(s.plugin, s.param))).length;
-  const totalLive = PLUGINS.reduce((n, p) => n + liveCount(p.id), 0);
+  const totalLive = plugins.reduce((n, p) => n + liveCount(p.id), 0);
   return (
     <section className="rounded-[var(--radius-panel)] glass" aria-label="Effects rack">
       <Collapsible title="Effects" badge={totalLive > 0 && <LiveBadge count={totalLive} />} defaultOpen>
         <div className="flex flex-col">
-          {PLUGINS.map((plugin) => (
+          {plugins.map((plugin) => (
             <Collapsible
               key={plugin.id}
               level="item"

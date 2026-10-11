@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import type { EffectId } from "@/audio/rackSpec";
 import type { Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
@@ -21,12 +22,13 @@ interface Message {
 const PRESETS = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
 
 interface Props {
+  modules: readonly EffectId[];
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
 }
 
-export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault }: Props) {
   // Inset boxes: the assistant always sits inside its own glass panel.
   const box = "rounded-xl border border-border bg-inset";
   const [input, setInput] = useState("");
@@ -45,12 +47,12 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
       const res = await fetch("/api/mapping", {
         method: "POST",
         headers: ownerHeaders(),
-        body: JSON.stringify({ intent: text }),
+        body: JSON.stringify({ intent: text, modules }),
         signal: AbortSignal.timeout(20000),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "The AI request failed.");
-      const valid = validateMapping(data.mapping);
+      const valid = validateMapping(data.mapping, { plugins: modules });
       if (!valid.ok) throw new Error("The AI returned a mapping we could not use.");
       setProposal({ mapping: valid.mapping, summary: String(data.summary ?? ""), intent: text });
       setMessages((m) => [...m, { role: "assistant", text: data.summary }]);
