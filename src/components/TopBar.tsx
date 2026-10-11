@@ -33,6 +33,8 @@ interface Props {
   dbStatus: BatcherStatus;
   surface: SurfaceKind;
   onSurfaceChange: (surface: SurfaceKind) => void;
+  /** Set inside a lesson playground. */
+  lesson?: { number: number; title: string };
 }
 
 const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
@@ -58,6 +60,7 @@ export function TopBar(props: Props) {
     dbStatus,
     surface,
     onSurfaceChange,
+    lesson,
   } = props;
   const cam = CAMERA_LABEL[camera];
   return (
@@ -66,7 +69,20 @@ export function TopBar(props: Props) {
         <span className="flex size-9 items-center justify-center rounded-[10px] bg-ink shadow-[inset_0_1px_0_rgb(255_255_255/0.2)]">
           <PinchGlyph />
         </span>
-        <span className="text-[15px] font-semibold tracking-tight">Gesture Rack</span>{" "}
+        {lesson ? (
+          <nav className="flex items-baseline gap-2" aria-label="Breadcrumb">
+            <Link href="/learn" className="text-[13px] text-muted hover:text-text">
+              ← Lessons
+            </Link>
+            <span className="text-[15px] font-semibold tracking-tight">
+              <span className="text-muted">{lesson.number}.</span> {lesson.title}
+            </span>
+          </nav>
+        ) : (
+          <Link href="/" className="text-[15px] font-semibold tracking-tight">
+            Gesture Rack
+          </Link>
+        )}
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
@@ -101,6 +117,15 @@ export function TopBar(props: Props) {
           Share data
         </label>
 
+        {lesson ? (
+          <Link href="/" className="text-muted hover:text-text">
+            Free play
+          </Link>
+        ) : (
+          <Link href="/learn" className="font-semibold text-accent-text hover:text-text">
+            Learn
+          </Link>
+        )}
         <Link href="/dashboard" className="text-muted hover:text-text">
           Dashboard
         </Link>
@@ -126,6 +151,7 @@ export function TopBar(props: Props) {
           <button
             type="button"
             onClick={onStartAudio}
+            data-tour="start-audio"
             disabled={audio === "starting"}
             className="flex items-center gap-1.5 rounded-xl bg-ink px-4 py-2 text-[13px] font-semibold text-on-ink disabled:cursor-default"
           >

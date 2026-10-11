@@ -19,16 +19,23 @@ interface Message {
   text: string;
 }
 
-const PRESETS = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+
+type Mode = "ask" | "map";
 
 interface Props {
   modules: readonly EffectId[];
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
+  /** In a lesson: questions to suggest, and the lesson the answers are about. */
+  lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
+  onAsked?: () => void;
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, lesson, onAsked }: Props) {
+  // The studio only changes the sound; a lesson starts on questions.
+  const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
   const box = "rounded-xl border border-border bg-inset";
   const [input, setInput] = useState("");
@@ -36,10 +43,33 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
   const [loading, setLoading] = useState(false);
   const [proposal, setProposal] = useState<Proposal | null>(null);
 
-  const submit = async (intent: string) => {
-    const text = intent.trim();
+  const ask = async (question: string) => {
+    setMessages((m) => [...m, { role: "user", text: question }]);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/explain", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ question, tutorial: lesson?.slug }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "The AI could not answer right now.");
+      setMessages((m) => [...m, { role: "assistant", text: String(data.answer) }]);
+      onAsked?.();
+    } catch (err) {
+      const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
+      setMessages((m) => [...m, { role: "error", text: `${msg} The lesson keeps working without it.` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submit = async (raw: string) => {
+    const text = raw.trim();
     if (!text || loading) return;
     setInput("");
+    if (mode === "ask") return ask(text);
     setProposal(null);
     setMessages((m) => [...m, { role: "user", text }]);
     setLoading(true);
@@ -65,7 +95,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
   };
 
   return (
-    <aside className="flex min-h-0 flex-col gap-2" aria-label="Assistant">
+    <aside className="flex min-h-0 flex-col gap-2" aria-label="Assistant" data-tour="assistant">
       <div className={`${box} p-2.5`}>
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
@@ -79,7 +109,11 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
       <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
         <div className="flex max-h-56 flex-1 flex-col gap-1.5 overflow-y-auto p-2.5" aria-live="polite">
           {messages.length === 0 && (
-            <p className="text-[13px] leading-snug text-muted">Tell the rack what you want to hear. The AI maps your pinch for you.</p>
+            <p className="text-[13px] leading-snug text-muted">
+              {mode === "ask"
+                ? "Ask anything about what you're hearing. Answers use the effects in this rack."
+                : "Tell the rack what you want to hear. The AI maps your pinch for you."}
+            </p>
           )}
           {messages.map((m, i) => (
             <p
@@ -95,7 +129,9 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
               {m.text}
             </p>
           ))}
-          {loading && <p className="text-[13px] text-muted">Thinking about your sound...</p>}
+          {loading && (
+            <p className="text-[13px] text-muted">{mode === "ask" ? "Thinking it through..." : "Thinking about your sound..."}</p>
+          )}
           {proposal && (
             <MappingCard
               proposal={proposal}
@@ -112,8 +148,29 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
           )}
         </div>
 
-        <div className="flex flex-wrap gap-1 border-t border-border px-2.5 pt-2">
-          {PRESETS.map((p) => (
+        {lesson && (
+          <div className="mx-2.5 mt-1 flex rounded-full bg-black/[0.06] p-0.5 text-[11px]" role="tablist" aria-label="Assistant mode">
+            {(
+              [
+                ["ask", "Ask a question"],
+                ["map", "Change the sound"],
+              ] as const
+            ).map(([m, label]) => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={`flex-1 rounded-full px-2 py-1 transition-colors ${mode === m ? "bg-white font-medium text-[#111] shadow-[0_1px_3px_rgb(0_0_0/0.14)]" : "text-muted hover:text-text"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-1 border-t border-border px-2.5 pt-2" data-tour="ask-chips">
+          {(mode === "ask" ? (lesson?.asks ?? []) : (lesson?.tries ?? STUDIO_TRIES)).map((p) => (
             <button
               key={p}
               type="button"
@@ -135,7 +192,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault }:
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Make it dreamier..."
+            placeholder={mode === "ask" ? "Why does feedback build up?" : "Make it dreamier..."}
             maxLength={500}
             className="min-w-0 flex-1 rounded-lg border border-border bg-panel-raised px-2.5 py-1.5 text-[13px] placeholder:text-muted focus:border-accent/60 focus:outline-none"
           />

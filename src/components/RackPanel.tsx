@@ -64,7 +64,7 @@ export function RackPanel(props: Props) {
             );
           })}
         </div>
-        <div className="mt-1 border-t border-border pt-2.5">
+        <div className="mt-1 border-t border-border pt-2.5" data-tour="output-meter">
           <OutputMeter rack={rack} />
         </div>
       </Collapsible>
