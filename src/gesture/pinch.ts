@@ -14,6 +14,8 @@ export interface Calibration {
 export const DEFAULT_CALIBRATION: Calibration = { closed: 0.3, open: 1.3 };
 
 const WRIST = 0;
+const THUMB_MCP = 2;
+const THUMB_IP = 3;
 const THUMB_TIP = 4;
 const INDEX_MCP = 5;
 const INDEX_TIP = 8;
@@ -31,15 +33,30 @@ const PINKY_TIP = 20;
  */
 const OPEN_HAND_EXTENSION_RATIO = 1.7;
 
+/** The thumb is shorter and angled differently from the other fingers, so it gets its own threshold. */
+const THUMB_EXTENSION_RATIO = 1.4;
+
+/** How far sideways the thumb may lean and still count as pointing up. 1 means up to 45 degrees off vertical. */
+const THUMB_UP_MAX_SIDEWAYS_RATIO = 1;
+
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function isFingerExtended(landmarks: readonly Point[], mcp: number, tip: number): boolean {
+/** True when the thumb points up in the frame, not sideways or down, regardless of how extended it is. */
+function isThumbPointingUp(landmarks: readonly Point[]): boolean {
+  const mcp = landmarks[THUMB_MCP];
+  const tip = landmarks[THUMB_TIP];
+  const dx = tip.x - mcp.x;
+  const dy = tip.y - mcp.y; // landmark y grows downward, so pointing up means a negative dy
+  return -dy > Math.abs(dx) * THUMB_UP_MAX_SIDEWAYS_RATIO;
+}
+
+function isFingerExtended(landmarks: readonly Point[], mcp: number, tip: number, ratio = OPEN_HAND_EXTENSION_RATIO): boolean {
   const wrist = landmarks[WRIST];
   const mcpDist = dist(wrist, landmarks[mcp]);
   if (mcpDist < 1e-6) return false;
-  return dist(wrist, landmarks[tip]) / mcpDist >= OPEN_HAND_EXTENSION_RATIO;
+  return dist(wrist, landmarks[tip]) / mcpDist >= ratio;
 }
 
 /**
@@ -83,4 +100,24 @@ export function isOpenHand(landmarks: readonly Point[]): boolean {
 export function isPinkyExtended(landmarks: readonly Point[]): boolean {
   if (landmarks.length < 21) return false;
   return isFingerExtended(landmarks, PINKY_MCP, PINKY_TIP);
+}
+
+/**
+ * True for a thumbs-up: thumb extended away from the wrist and pointing up in the frame (not out
+ * sideways), its IP joint above the index knuckle (landmark y grows downward, so a smaller y is
+ * higher on screen), while index, middle, ring and pinky stay curled into a fist. The opposite
+ * shape from isOpenHand, so the two can never both be true at once. Used as a hands-free trigger
+ * to start audio.
+ */
+export function isThumbsUp(landmarks: readonly Point[]): boolean {
+  if (landmarks.length < 21) return false;
+  return (
+    isFingerExtended(landmarks, THUMB_MCP, THUMB_TIP, THUMB_EXTENSION_RATIO) &&
+    isThumbPointingUp(landmarks) &&
+    landmarks[THUMB_IP].y < landmarks[INDEX_MCP].y &&
+    !isFingerExtended(landmarks, INDEX_MCP, INDEX_TIP) &&
+    !isFingerExtended(landmarks, MIDDLE_MCP, MIDDLE_TIP) &&
+    !isFingerExtended(landmarks, RING_MCP, RING_TIP) &&
+    !isFingerExtended(landmarks, PINKY_MCP, PINKY_TIP)
+  );
 }

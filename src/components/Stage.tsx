@@ -22,6 +22,8 @@ interface Props {
   onTracked: (values: GestureValues) => void;
   /** Called whenever a tracked frame shows an open palm. Used as a hands-free panic stop. */
   onOpenHand: () => void;
+  /** Called after a thumbs-up has been held long enough. Used as a hands-free way to start audio. */
+  onThumbsUp: () => void;
   fakeValues: Record<Gesture, number>;
   onFakeChange: (gesture: Gesture, value: number) => void;
   values: GestureValues;
@@ -36,6 +38,8 @@ const CAL_KEY = "gesture-rack.calibration";
 const CAL_SAMPLE_MS = 1500;
 /** How long an open palm must be held before it triggers the panic stop, so a passing relax doesn't trip it. */
 const OPEN_HAND_HOLD_MS = 2000;
+/** How long a thumbs-up must be held before it starts audio, so a passing thumb doesn't trip it. */
+const THUMBS_UP_HOLD_MS = 1500;
 
 function loadCalibration(): Calibration {
   try {
@@ -55,6 +59,7 @@ export function Stage(props: Props) {
     onCameraStatus,
     onTracked,
     onOpenHand,
+    onThumbsUp,
     fakeValues,
     onFakeChange,
     values,
@@ -74,6 +79,23 @@ export function Stage(props: Props) {
   const heldValuesRef = useRef<GestureValues>({ pinch_left: null, pinch_right: null });
   /** Timestamp an open palm was first seen this streak, or null when no hand is currently open. */
   const openSinceRef = useRef<number | null>(null);
+  /** Timestamp a thumbs-up was first seen this streak, or null when no hand currently shows it. */
+  const thumbsUpSinceRef = useRef<number | null>(null);
+  /** Set once onOpenHand/onThumbsUp fires for the current streak, so holding the pose doesn't fire it every frame. */
+  const openFiredRef = useRef(false);
+  const thumbsUpFiredRef = useRef(false);
+  // handleFrame is handed to the tracker exactly once (in startCamera) and never re-subscribed, so it
+  // must never close over these directly — that would freeze audio/stopped at whatever they were when
+  // the camera started, making onThumbsUp think audio is still "off" forever and call startAudio() on
+  // every frame. Reading through refs keeps it seeing the current callback on every call.
+  const onTrackedRef = useRef(onTracked);
+  const onOpenHandRef = useRef(onOpenHand);
+  const onThumbsUpRef = useRef(onThumbsUp);
+  useEffect(() => {
+    onTrackedRef.current = onTracked;
+    onOpenHandRef.current = onOpenHand;
+    onThumbsUpRef.current = onThumbsUp;
+  }, [onTracked, onOpenHand, onThumbsUp]);
 
   const [status, setStatus] = useState<CameraStatus>("off");
   const [anchors, setAnchors] = useState<Partial<Record<Gesture, { x: number; y: number }>>>({});
@@ -92,38 +114,60 @@ export function Stage(props: Props) {
     calRef.current = loadCalibration();
   }, []);
 
-  const handleFrame = useCallback(
-    (frame: TrackerFrame) => {
-      const next: GestureValues = { pinch_left: null, pinch_right: null };
-      const nextAnchors: Partial<Record<Gesture, { x: number; y: number }>> = {};
-      let anyOpen = false;
-      for (const hand of frame.hands) {
-        const live = normalizePinch(hand.ratio, calRef.current);
-        const held = heldValuesRef.current[hand.gesture];
-        if (hand.pinkyExtended && held !== null) {
-          next[hand.gesture] = held;
-        } else {
-          next[hand.gesture] = live;
-          heldValuesRef.current[hand.gesture] = live;
-        }
-        nextAnchors[hand.gesture] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
-        if (calStepRef.current) samplesRef.current.push(hand.ratio);
-        if (hand.isOpen) anyOpen = true;
-      }
-      setAnchors(nextAnchors);
-      onTracked(next);
-      // Only outside calibration, so holding an open palm to sample "open" during pinch calibration can't also stop audio.
-      if (anyOpen && !calStepRef.current) {
-        if (openSinceRef.current === null) openSinceRef.current = frame.timestamp;
-        // Require the hold, not just a momentary open palm, so relaxing the hand mid-pinch doesn't trip it.
-        if (frame.timestamp - openSinceRef.current >= OPEN_HAND_HOLD_MS) onOpenHand();
+  const handleFrame = useCallback((frame: TrackerFrame) => {
+    const next: GestureValues = { pinch_left: null, pinch_right: null };
+    const nextAnchors: Partial<Record<Gesture, { x: number; y: number }>> = {};
+    let anyOpen = false;
+    let anyThumbsUp = false;
+    for (const hand of frame.hands) {
+      const live = normalizePinch(hand.ratio, calRef.current);
+      const held = heldValuesRef.current[hand.gesture];
+      if (hand.pinkyExtended && held !== null) {
+        next[hand.gesture] = held;
       } else {
-        openSinceRef.current = null;
+        next[hand.gesture] = live;
+        heldValuesRef.current[hand.gesture] = live;
       }
-      drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current);
-    },
-    [onTracked, onOpenHand],
-  );
+      nextAnchors[hand.gesture] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
+      if (calStepRef.current) samplesRef.current.push(hand.ratio);
+      if (hand.isOpen) anyOpen = true;
+      if (hand.thumbsUp) anyThumbsUp = true;
+    }
+    setAnchors(nextAnchors);
+    onTrackedRef.current(next);
+    // Only outside calibration, so holding an open palm to sample "open" during pinch calibration can't also stop audio.
+    if (anyOpen && !calStepRef.current) {
+      if (openSinceRef.current === null) openSinceRef.current = frame.timestamp;
+      // Require the hold, not just a momentary open palm, so relaxing the hand mid-pinch doesn't trip it.
+      // Fires once per hold, not every frame: onOpenHand can trigger an async operation downstream, and
+      // calling it every frame for as long as the pose is held raced multiple overlapping calls against
+      // React's render cycle (see onThumbsUp below, same pattern, worse because startAudio is async).
+      if (!openFiredRef.current && frame.timestamp - openSinceRef.current >= OPEN_HAND_HOLD_MS) {
+        openFiredRef.current = true;
+        onOpenHandRef.current();
+      }
+    } else {
+      openSinceRef.current = null;
+      openFiredRef.current = false;
+    }
+    if (anyThumbsUp && !calStepRef.current) {
+      if (thumbsUpSinceRef.current === null) thumbsUpSinceRef.current = frame.timestamp;
+      // Fires once per hold: onThumbsUp can call the async startAudio(), and firing every frame let
+      // several stale calls race through before Studio's "audio" state (and this ref) caught up,
+      // kicking off overlapping rack starts whose state churn tripped React's update-depth guard.
+      if (!thumbsUpFiredRef.current && frame.timestamp - thumbsUpSinceRef.current >= THUMBS_UP_HOLD_MS) {
+        thumbsUpFiredRef.current = true;
+        onThumbsUpRef.current();
+      }
+    } else {
+      thumbsUpSinceRef.current = null;
+      thumbsUpFiredRef.current = false;
+    }
+    drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current);
+    // Stable for the component's lifetime: onFrame is only ever handed to the tracker once (in
+    // startCamera) and never re-subscribed, so this must never close over changing props directly
+    // (see the refs above) or it freezes them at whatever they were when the camera started.
+  }, []);
 
   const stopCamera = useCallback(() => {
     trackerRef.current?.dispose();
