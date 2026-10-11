@@ -11,7 +11,7 @@ export interface Calibration {
   open: number;
 }
 
-export const DEFAULT_CALIBRATION: Calibration = { closed: 0.2, open: 1.1 };
+export const DEFAULT_CALIBRATION: Calibration = { closed: 0.3, open: 1.3 };
 
 const WRIST = 0;
 const THUMB_TIP = 4;
@@ -24,8 +24,12 @@ const RING_TIP = 16;
 const PINKY_MCP = 17;
 const PINKY_TIP = 20;
 
-/** A fingertip counts as extended once it is this many times farther from the wrist than its own MCP joint. */
-const OPEN_HAND_EXTENSION_RATIO = 1.2;
+/**
+ * A fingertip counts as extended once it is this many times farther from the wrist than its own
+ * MCP joint. Deliberately high: a relaxed, half-open palm should not count, only fingers
+ * stretched out straight. Tune against the real camera if the panic stop fires too eagerly or not at all.
+ */
+const OPEN_HAND_EXTENSION_RATIO = 1.7;
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);

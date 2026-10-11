@@ -1,6 +1,6 @@
-import { clampToSchema, paramKey } from "@/audio/paramSchema";
+import { clampToSchema, getParamSpec, paramKey } from "@/audio/paramSchema";
 import type { Curve } from "@/audio/paramSchema";
-import type { Gesture, GestureValues, Mapping } from "./types";
+import { MAX_TARGETS_PER_GESTURE, type Gesture, type GestureValues, type Mapping } from "./types";
 
 export interface ParamChange {
   plugin: string;
@@ -59,4 +59,41 @@ export function boundParams(mapping: Mapping): Map<string, Gesture> {
   const bound = new Map<string, Gesture>();
   for (const m of mapping.mappings) for (const t of m.targets) bound.set(paramKey(t.plugin, t.param), m.gesture);
   return bound;
+}
+
+/** True when this gesture currently drives this parameter. */
+export function isTargetBound(mapping: Mapping, gesture: Gesture, plugin: string, param: string): boolean {
+  const gm = mapping.mappings.find((m) => m.gesture === gesture);
+  return gm?.targets.some((t) => t.plugin === plugin && t.param === param) ?? false;
+}
+
+/**
+ * Let a user hand-pick what a gesture controls: adds the target (at the parameter's full safe
+ * range, so the picker never needs to know about curves or ranges) if it is not already bound to
+ * this gesture, or removes it if it is. Returns null when the toggle is not possible: removing
+ * the mapping's last remaining target (the contract requires at least one), or adding past
+ * MAX_TARGETS_PER_GESTURE.
+ */
+export function toggleTarget(mapping: Mapping, gesture: Gesture, plugin: string, param: string): Mapping | null {
+  const spec = getParamSpec(plugin, param);
+  if (!spec) return null;
+
+  const mappings = mapping.mappings.map((m) => ({ ...m, targets: [...m.targets] }));
+  const gm = mappings.find((m) => m.gesture === gesture);
+  const bound = gm?.targets.some((t) => t.plugin === plugin && t.param === param) ?? false;
+
+  if (bound && gm) {
+    gm.targets = gm.targets.filter((t) => !(t.plugin === plugin && t.param === param));
+    if (gm.targets.length === 0) mappings.splice(mappings.indexOf(gm), 1);
+  } else if (!bound) {
+    const target = { plugin, param, min: spec.min, max: spec.max, curve: spec.curve };
+    if (gm) {
+      if (gm.targets.length >= MAX_TARGETS_PER_GESTURE) return null;
+      gm.targets.push(target);
+    } else {
+      mappings.push({ gesture, targets: [target] });
+    }
+  }
+
+  return mappings.length > 0 ? { mappings } : null;
 }

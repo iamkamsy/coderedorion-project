@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import { getParamSpec, specsForPlugin, PLUGINS } from "@/audio/paramSchema";
 import type { EffectId } from "@/audio/rackSpec";
-import type { Mapping } from "@/mapping/types";
+import { isTargetBound } from "@/mapping/engine";
+import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
@@ -11,6 +12,7 @@ import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder
 import { speak, stopSpeaking, useCoachVoice } from "@/lib/speech";
 import { toLastSentence } from "@/lib/text";
 import { THINKING_PHRASES, ThinkingIndicator } from "./ThinkingIndicator";
+import { Collapsible } from "./Collapsible";
 
 export interface Proposal {
   mapping: Mapping;
@@ -47,12 +49,14 @@ interface Props {
   activeSummary: string;
   onApprove: (proposal: Proposal) => void;
   onResetDefault: () => void;
+  mapping: Mapping;
+  onToggleParam: (gesture: Gesture, plugin: string, param: string) => void;
   /** In a lesson: questions to suggest, and the lesson the answers are about. */
   lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
   onAsked?: () => void;
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault, lesson, onAsked }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked }: Props) {
   // The studio only changes the sound; a lesson starts on questions.
   const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
@@ -193,6 +197,15 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
           </button>
         </div>
         <p className="mt-1 text-[13px] leading-snug">{activeSummary}</p>
+        <div className="mt-2 border-t border-border">
+          <Collapsible title="Choose what each hand controls" level="item">
+            <div className="flex flex-col gap-2.5">
+              {GESTURES.map((g) => (
+                <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
+              ))}
+            </div>
+          </Collapsible>
+        </div>
       </div>
 
       <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
@@ -326,6 +339,67 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
         </form>
       </div>
     </aside>
+  );
+}
+
+function HandPicker({
+  gesture,
+  mapping,
+  modules,
+  onToggle,
+}: {
+  gesture: Gesture;
+  mapping: Mapping;
+  modules: readonly EffectId[];
+  onToggle: (gesture: Gesture, plugin: string, param: string) => void;
+}) {
+  const otherGesture = GESTURES.find((g) => g !== gesture)!;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[13px] font-semibold text-text">{GESTURE_LABEL[gesture]}</p>
+      <div className="flex flex-col gap-1">
+        {modules.map((id) => {
+          const specs = specsForPlugin(id);
+          if (specs.length === 0) return null;
+          const plugin = PLUGINS.find((p) => p.id === id)?.label ?? id;
+          return (
+            <div
+              key={id}
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label={`${GESTURE_LABEL[gesture]} ${plugin} targets`}
+            >
+              <span className="text-[10px] text-muted">{plugin}:</span>
+              <div className="flex flex-wrap gap-1">
+                {specs.map((spec) => {
+                  const bound = isTargetBound(mapping, gesture, spec.plugin, spec.param);
+                  const takenByOtherHand = !bound && isTargetBound(mapping, otherGesture, spec.plugin, spec.param);
+                  return (
+                    <button
+                      key={`${spec.plugin}.${spec.param}`}
+                      type="button"
+                      disabled={takenByOtherHand}
+                      onClick={() => onToggle(gesture, spec.plugin, spec.param)}
+                      aria-pressed={bound}
+                      title={takenByOtherHand ? `${GESTURE_LABEL[otherGesture]} already controls this` : undefined}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        bound
+                          ? "bg-accent/15 text-accent-text"
+                          : takenByOtherHand
+                            ? "cursor-not-allowed border border-border/50 text-muted/40"
+                            : "border border-border text-muted hover:border-accent/60 hover:text-accent-text"
+                      }`}
+                    >
+                      {spec.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

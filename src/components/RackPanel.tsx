@@ -135,7 +135,7 @@ function PluginParams({
                 className={`my-1.5 h-1.5 overflow-hidden rounded-full ${gesture ? "bg-accent/15" : "bg-panel-raised"}`}
               >
                 <span
-                  className={`block h-full rounded-full transition-[width] duration-75 ${gesture ? "bg-gradient-to-r from-accent to-accent-soft shadow-[0_0_8px_var(--accent)]" : "bg-cool"}`}
+                  className={`block h-full rounded-full ${gesture ? "bg-gradient-to-r from-accent to-accent-soft shadow-[0_0_8px_var(--accent)]" : "bg-cool"}`}
                   style={{ width: `${toSlider(value) * 100}%` }}
                 />
               </span>
