@@ -10,8 +10,9 @@ export type AudioState = "off" | "starting" | "on" | "error";
 export type SurfaceKind = "tinted" | "graphite";
 
 const SOURCES: SegmentOption<SourceKind>[] = [
-  { id: "loop", label: "Test loop", icon: <LoopIcon /> },
-  { id: "mic", label: "Mic", title: "Microphone (use headphones)", icon: <MicIcon /> },
+  { id: "loop", label: "Test loop", title: SOURCE_LABEL.loop, icon: <LoopIcon /> },
+  { id: "mic", label: "Mic", title: `${SOURCE_LABEL.mic}: speech noise suppression on. Use headphones.`, icon: <MicIcon /> },
+  { id: "line", label: "Line in", title: `${SOURCE_LABEL.line}: raw signal for guitar or an audio interface.`, icon: <LineIcon /> },
 ];
 
 const SURFACES: SegmentOption<SurfaceKind>[] = [
@@ -46,8 +47,21 @@ const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
 };
 
 export function TopBar(props: Props) {
-  const { audio, onStartAudio, source, onSourceChange, camera, dataConsent, onConsentChange, dbStatus, surface, onSurfaceChange, lesson } =
-    props;
+  const {
+    audio,
+    onStartAudio,
+    stopped,
+    onToggleStop,
+    source,
+    onSourceChange,
+    camera,
+    dataConsent,
+    onConsentChange,
+    dbStatus,
+    surface,
+    onSurfaceChange,
+    lesson,
+  } = props;
   const cam = CAMERA_LABEL[camera];
   return (
     <header className="glass sticky top-3 z-30 mx-3 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl p-2 pl-2.5 sm:mx-4">
@@ -116,22 +130,37 @@ export function TopBar(props: Props) {
           Dashboard
         </Link>
 
-        <button
-          type="button"
-          onClick={onStartAudio}
-          data-tour="start-audio"
-          disabled={audio === "starting" || audio === "on"}
-          className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold disabled:cursor-default ${audio === "on" ? "bg-panel-raised text-text" : "bg-ink text-on-ink"}`}
-        >
-          {audio === "on" ? (
-            <span className="size-2 rounded-full bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden />
-          ) : (
+        {audio === "on" ? (
+          <button
+            type="button"
+            onClick={onToggleStop}
+            aria-pressed={stopped}
+            title={stopped ? "Fade the output back in" : "Fade the output to silence (Esc)"}
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold ${stopped ? "bg-ink text-on-ink" : "bg-panel-raised text-text"}`}
+          >
+            {stopped ? (
+              <svg viewBox="0 0 20 20" className="size-3" fill="currentColor" aria-hidden>
+                <path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2a.8.8 0 0 0-1.2.7Z" />
+              </svg>
+            ) : (
+              <span className="size-2.5 rounded-[3px] bg-accent shadow-[0_0_6px_var(--accent)]" aria-hidden />
+            )}
+            {stopped ? "Resume audio" : "Stop audio"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onStartAudio}
+            data-tour="start-audio"
+            disabled={audio === "starting"}
+            className="flex items-center gap-1.5 rounded-xl bg-ink px-4 py-2 text-[13px] font-semibold text-on-ink disabled:cursor-default"
+          >
             <svg viewBox="0 0 20 20" className="size-3" fill="currentColor" aria-hidden>
               <path d="M6 3.8v12.4a.8.8 0 0 0 1.2.7l10-6.2a.8.8 0 0 0 0-1.4l-10-6.2a.8.8 0 0 0-1.2.7Z" />
             </svg>
-          )}
-          {audio === "on" ? "Audio on" : audio === "starting" ? "Starting..." : audio === "error" ? "Retry audio" : "Start audio"}
-        </button>
+            {audio === "starting" ? "Starting..." : audio === "error" ? "Retry audio" : "Start audio"}
+          </button>
+        )}
       </div>
     </header>
   );
@@ -188,6 +217,14 @@ function MicIcon() {
     <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
       <rect x="7" y="2.5" width="6" height="10" rx="3" />
       <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function LineIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M3 10h5l2-4 2 8 2-4h3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
