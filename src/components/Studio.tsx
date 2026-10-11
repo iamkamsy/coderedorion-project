@@ -11,6 +11,7 @@ import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
 import { formatParam, summarizeMapping } from "@/lib/format";
+import { syncDefaultConsent } from "@/lib/consent";
 import { ownerHeaders } from "@/lib/ownerId";
 import { getTutorial, type Preset } from "@/tutorials";
 import type { CoachSignals } from "@/tutorials/checks";
@@ -25,29 +26,6 @@ import { Collapsible } from "./Collapsible";
 import { Landscape } from "./Landscape";
 
 const DEFAULT_SUMMARY = "Right pinch opens reverb and delay feedback together. Left pinch sweeps the filter.";
-const CONSENT_KEY = "gesture-rack.data-consent";
-
-const consentListeners = new Set<() => void>();
-const consentStore = {
-  subscribe(cb: () => void) {
-    consentListeners.add(cb);
-    return () => consentListeners.delete(cb);
-  },
-  get(): boolean {
-    try {
-      return localStorage.getItem(CONSENT_KEY) === "true";
-    } catch {
-      return false;
-    }
-  },
-  set(v: boolean) {
-    try {
-      localStorage.setItem(CONSENT_KEY, String(v));
-    } catch {}
-    consentListeners.forEach((cb) => cb());
-  },
-};
-
 const SURFACE_KEY = "gesture-rack.surface";
 
 const surfaceListeners = new Set<() => void>();
@@ -119,7 +97,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   const [abUsed, setAbUsed] = useState(false);
   const [asked, setAsked] = useState(false);
   const [params, setParams] = useState<Record<string, number>>(() => defaultValuesFor(modules));
-  const dataConsent = useSyncExternalStore(consentStore.subscribe, consentStore.get, () => false);
   const [dbStatus, setDbStatus] = useState<BatcherStatus>("idle");
   const surface = useSyncExternalStore(surfaceStore.subscribe, surfaceStore.get, () => "tinted" as const);
   const [expanded, setExpanded] = useState(false);
@@ -154,6 +131,8 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
       })
       .catch(() => {});
   }, [modules, tutorial]);
+
+  useEffect(() => syncDefaultConsent(), []);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -327,16 +306,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     [changeDivision, modules],
   );
 
-  const changeConsent = useCallback((v: boolean) => {
-    consentStore.set(v);
-    fetch("/api/profile", {
-      method: "PUT",
-      headers: ownerHeaders(),
-      body: JSON.stringify({ dataConsent: v }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => {});
-  }, []);
-
   const chips = useMemo(() => {
     const out = { pinch_left: [] as Chip[], pinch_right: [] as Chip[] };
     for (const m of mapping.mappings) {
@@ -358,17 +327,18 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
 
   const signals: CoachSignals = { audioOn: audio === "on", abUsed, params, division, presetsLoaded, bypassToggled, asked };
 
-  // Three columns from xl up keep the camera centered on the page; below that the camera sits on top.
+  // Three columns from lg up keep the camera centered on the page. As the window narrows the side boxes
+  // shrink toward 220px and the camera takes what is left; below lg everything stacks with the camera on top.
   const body = (
-    <main className={`surface-${surface} flex min-h-0 flex-1 flex-col overflow-y-auto p-4 xl:overflow-hidden`}>
+    <main className={`surface-${surface} flex min-h-0 flex-1 flex-col overflow-y-auto p-4 lg:overflow-hidden`}>
       {/* Expanded camera: a clean landscape fills the border around it, and the side boxes float over it. */}
       {expanded && <Landscape id="expand" className="fixed inset-0 z-[25]" />}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:min-h-0 xl:flex-1 xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+      <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[clamp(220px,21vw,280px)_minmax(0,1fr)_clamp(220px,21vw,280px)] lg:gap-3 xl:gap-4">
         <div
           className={
             expanded
               ? `${OVERLAY} left-8 w-[300px]`
-              : "order-2 flex flex-col gap-4 xl:order-none xl:col-start-1 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+              : "order-2 flex flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
           }
         >
           <section className="rounded-[var(--radius-panel)] glass" aria-label="AI assistant">
@@ -386,7 +356,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             </Collapsible>
           </section>
         </div>
-        <div className="order-1 flex flex-col gap-4 lg:col-span-2 xl:order-none xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto">
+        <div className="order-1 flex flex-col gap-4 lg:order-none lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto">
           {tutorial && !expanded && <PresetBar presets={tutorial.presets} activeId={activePreset} onLoad={loadPreset} />}
           <Stage
             inputMode={inputMode}
@@ -410,7 +380,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
           className={
             expanded
               ? `${OVERLAY} right-8 w-[280px]`
-              : "order-3 flex flex-col gap-4 xl:order-none xl:col-start-3 xl:row-start-1 xl:min-h-0 xl:overflow-y-auto"
+              : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
           }
         >
           <RackPanel
@@ -443,8 +413,6 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
         source={source}
         onSourceChange={changeSource}
         camera={camera}
-        dataConsent={dataConsent}
-        onConsentChange={changeConsent}
         dbStatus={dbStatus}
         surface={surface}
         onSurfaceChange={surfaceStore.set}

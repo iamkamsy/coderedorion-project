@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getParamSpec, specsForPlugin, PLUGINS } from "@/audio/paramSchema";
 import type { EffectId } from "@/audio/rackSpec";
 import { isTargetBound } from "@/mapping/engine";
@@ -8,6 +8,7 @@ import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
+import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder";
 import { Collapsible } from "./Collapsible";
 
 export interface Proposal {
@@ -45,6 +46,18 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [voice, setVoice] = useState<"idle" | "recording" | "transcribing">("idle");
+  const recordingRef = useRef<Recording | null>(null);
+  const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Leaving the page mid-recording releases the mic and drops the clip.
+  useEffect(
+    () => () => {
+      if (autoStopRef.current) clearTimeout(autoStopRef.current);
+      recordingRef.current?.cancel();
+    },
+    [],
+  );
   const [proposal, setProposal] = useState<Proposal | null>(null);
 
   const ask = async (question: string) => {
@@ -66,6 +79,43 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
       setMessages((m) => [...m, { role: "error", text: `${msg} The lesson keeps working without it.` }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const finishRecording = async () => {
+    const rec = recordingRef.current;
+    if (!rec) return;
+    recordingRef.current = null;
+    if (autoStopRef.current) clearTimeout(autoStopRef.current);
+    setVoice("transcribing");
+    try {
+      const audio = await rec.stop();
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ audio, mimeType: "audio/wav" }),
+        signal: AbortSignal.timeout(35000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Could not understand the recording.");
+      setVoice("idle");
+      await submit(String(data.text));
+    } catch (err) {
+      setVoice("idle");
+      const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
+      setMessages((m) => [...m, { role: "error", text: msg }]);
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (voice === "recording") return finishRecording();
+    if (voice !== "idle" || loading) return;
+    try {
+      recordingRef.current = await startRecording();
+      setVoice("recording");
+      autoStopRef.current = setTimeout(() => void finishRecording(), MAX_RECORDING_MS);
+    } catch {
+      setMessages((m) => [...m, { role: "error", text: "Microphone access is needed to talk to the assistant." }]);
     }
   };
 
@@ -142,6 +192,11 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
               {m.text}
             </p>
           ))}
+          {voice !== "idle" && (
+            <p className="text-[13px] text-muted" role="status">
+              {voice === "recording" ? "Listening... tap the mic again to send." : "Transcribing what you said..."}
+            </p>
+          )}
           {loading && (
             <p className="text-[13px] text-muted">{mode === "ask" ? "Thinking it through..." : "Thinking about your sound..."}</p>
           )}
@@ -211,15 +266,25 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
           />
           <button
             type="button"
-            disabled
-            title="Voice control with ElevenLabs is coming next"
-            className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted opacity-50"
-            aria-label="Voice input (coming soon)"
+            onClick={() => void toggleRecording()}
+            disabled={voice === "transcribing" || (loading && voice === "idle")}
+            aria-pressed={voice === "recording"}
+            title={voice === "recording" ? "Stop and send" : "Speak your request (up to 15 seconds)"}
+            aria-label={
+              voice === "recording" ? "Stop recording and send" : voice === "transcribing" ? "Transcribing" : "Speak your request"
+            }
+            className={`press flex w-8 shrink-0 items-center justify-center rounded-lg border transition-colors disabled:opacity-50 ${
+              voice === "recording" ? "animate-pulse border-accent bg-accent text-white" : "border-border text-muted hover:text-text"
+            }`}
           >
-            <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-              <rect x="7" y="2.5" width="6" height="10" rx="3" />
-              <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" strokeLinecap="round" />
-            </svg>
+            {voice === "recording" ? (
+              <span className="size-2.5 rounded-[3px] bg-white" aria-hidden />
+            ) : (
+              <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                <rect x="7" y="2.5" width="6" height="10" rx="3" />
+                <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" strokeLinecap="round" />
+              </svg>
+            )}
           </button>
           <button
             type="submit"
@@ -255,7 +320,12 @@ function HandPicker({
           if (specs.length === 0) return null;
           const plugin = PLUGINS.find((p) => p.id === id)?.label ?? id;
           return (
-            <div key={id} className="flex flex-wrap items-center gap-1.5" role="group" aria-label={`${GESTURE_LABEL[gesture]} ${plugin} targets`}>
+            <div
+              key={id}
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label={`${GESTURE_LABEL[gesture]} ${plugin} targets`}
+            >
               <span className="text-[10px] text-muted">{plugin}:</span>
               <div className="flex flex-wrap gap-1">
                 {specs.map((spec) => {

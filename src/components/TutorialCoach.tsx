@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { checkPasses, type CoachSignals } from "@/tutorials/checks";
 import { nextTutorial, type Tutorial } from "@/tutorials";
+import { placeCard, visibleRect, type Side } from "@/tutorials/placement";
 
 const CARD_WIDTH = 320;
 const GAP = 12;
@@ -46,6 +47,7 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
   const [doneOnArrival, setDoneOnArrival] = useState(() => checkPasses(tutorial.steps[0].check, signals));
   const [hidden, setHidden] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
   const step = tutorial.steps[index];
   const isLast = index === tutorial.steps.length - 1;
   const done = checkPasses(step.check, signals);
@@ -72,48 +74,69 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
     if (isLast) saveFinished(tutorial.slug);
   }, [isLast, tutorial.slug]);
 
-  // Highlight the target and keep the card next to it as the layout moves. Positions the
-  // card directly on its DOM node (no React state), and looks the target up on every tick
-  // so controls that appear later, such as after audio starts, are found.
+  // Follow the target with a spotlight ring and keep the card beside it. Both are fixed at
+  // the page root, so scroll columns and collapsible panels can't clip them, and both are
+  // positioned with transforms on every animation frame (no React state, no layout jumps).
   useEffect(() => {
     const card = cardRef.current;
-    if (hidden || !card) return;
-    let highlighted: HTMLElement | null = null;
-    let scrolled = false;
+    const ring = ringRef.current;
+    if (hidden || !card || !ring) return;
+    let raf = 0;
+    let frame = 0;
+    let el: HTMLElement | null = null;
+    let clips: HTMLElement[] = [];
+    let side: Side = "below";
+    let lastCard = "";
+    let lastRing = "";
 
+    const write = (node: HTMLElement, css: string, last: string) => {
+      if (css !== last) node.style.cssText = css;
+      return css;
+    };
     const dock = () => {
-      Object.assign(card.style, { top: "", left: "", right: `${GAP}px`, bottom: `${GAP}px` });
-    };
-    const place = () => {
-      const el = step.target ? (rootRef.current?.querySelector<HTMLElement>(`[data-tour="${step.target}"]`) ?? null) : null;
-      if (el !== highlighted) {
-        highlighted?.removeAttribute("data-tour-active");
-        el?.setAttribute("data-tour-active", "");
-        highlighted = el;
-      }
-      const r = el?.getBoundingClientRect();
-      if (!el || !r || r.width === 0) return dock();
-      if (!scrolled) {
-        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        scrolled = true;
-      }
-      const cardH = card.offsetHeight;
-      const below = r.bottom + GAP + cardH <= window.innerHeight || r.top - GAP - cardH < 0;
-      const top = Math.max(GAP, below ? r.bottom + GAP : r.top - GAP - cardH);
-      const left = Math.min(Math.max(GAP, r.left + r.width / 2 - CARD_WIDTH / 2), window.innerWidth - CARD_WIDTH - GAP);
-      Object.assign(card.style, { top: `${top}px`, left: `${left}px`, right: "", bottom: "" });
+      lastRing = write(ring, "opacity:0", lastRing);
+      const x = window.innerWidth - card.offsetWidth - GAP;
+      const y = window.innerHeight - card.offsetHeight - GAP;
+      lastCard = write(card, `width:${CARD_WIDTH}px;transform:translate3d(${x}px,${y}px,0)`, lastCard);
     };
 
-    place();
-    const id = setInterval(place, 250);
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      highlighted?.removeAttribute("data-tour-active");
-      clearInterval(id);
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      // Re-find the target now and then: it may mount later (after audio starts) or re-render.
+      if (step.target && (!el?.isConnected || frame++ % 30 === 0)) {
+        const found = rootRef.current?.querySelector<HTMLElement>(`[data-tour="${step.target}"]`) ?? null;
+        if (found !== el) {
+          el = found;
+          clips = el ? clippingAncestors(el) : [];
+          el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      }
+      if (!el) return dock();
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const vis = visibleRect(
+        el.getBoundingClientRect(),
+        clips.map((c) => c.getBoundingClientRect()),
+        viewport,
+      );
+      if (!vis) return dock();
+
+      const pad = 4;
+      lastRing = write(
+        ring,
+        `opacity:1;transform:translate3d(${vis.left - pad}px,${vis.top - pad}px,0);width:${vis.right - vis.left + pad * 2}px;height:${vis.bottom - vis.top + pad * 2}px`,
+        lastRing,
+      );
+      const placed = placeCard(vis, { width: CARD_WIDTH, height: card.offsetHeight }, viewport, side, GAP);
+      side = placed.side;
+      lastCard = write(
+        card,
+        `width:${CARD_WIDTH}px;transform:translate3d(${Math.round(placed.left)}px,${Math.round(placed.top)}px,0)`,
+        lastCard,
+      );
     };
+
+    tick();
+    return () => cancelAnimationFrame(raf);
   }, [hidden, step.target, index, rootRef]);
 
   if (hidden) {
@@ -121,7 +144,7 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
       <button
         type="button"
         onClick={() => setHidden(false)}
-        className="fixed right-4 bottom-4 z-40 rounded-full border border-white/15 bg-[rgb(18_18_20/0.88)] px-4 py-2 text-sm font-medium text-[#f5f5f7] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl"
+        className="press fixed right-4 bottom-4 z-40 rounded-full border border-white/15 bg-[rgb(18_18_20/0.88)] px-4 py-2 text-sm font-medium text-[#f5f5f7] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl"
       >
         Show lesson ({index + 1}/{tutorial.steps.length})
       </button>
@@ -129,71 +152,93 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
   }
 
   return (
-    <div
-      ref={cardRef}
-      role="dialog"
-      aria-label={`Lesson step ${index + 1} of ${tutorial.steps.length}: ${step.title}`}
-      className="fixed z-40 max-w-[calc(100vw-24px)] rounded-2xl border border-white/15 bg-[rgb(18_18_20/0.9)] p-4 text-[#f5f5f7] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl"
-      style={{ width: CARD_WIDTH, right: GAP, bottom: GAP }}
-    >
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] font-semibold tracking-wide text-[#ff8a9b] uppercase">
-          Step {index + 1} of {tutorial.steps.length}
-        </span>
-        <button type="button" onClick={() => setHidden(true)} className="text-xs text-white/60 hover:text-white" aria-label="Hide lesson">
-          Hide
-        </button>
-      </div>
-      <p className="font-medium">{step.title}</p>
-      <p className="mt-1 text-sm leading-snug text-white/70">{step.body}</p>
-
-      {isLast && (
-        <ul className="mt-3 flex flex-col gap-1.5 text-sm">
-          {tutorial.recap.map((r) => (
-            <li key={r} className="flex gap-2">
-              <span className="text-[#ff8a9b]">✓</span>
-              {r}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {done && !isLast && <p className="mt-2 text-sm font-medium text-[#ff8a9b]">Nice, that&apos;s it.</p>}
-
-      <div className="mt-3 flex items-center gap-2">
-        <div className="mr-auto flex gap-1" aria-hidden>
-          {tutorial.steps.map((s, i) => (
-            <span
-              key={s.id}
-              className={`h-1.5 w-4 rounded-full ${i < index ? "bg-white/70" : i === index ? "bg-accent" : "bg-white/15"}`}
-            />
-          ))}
-        </div>
-        {index > 0 && (
-          <button type="button" onClick={() => goTo(index - 1)} className="rounded-xl px-2 py-1 text-sm text-white/60 hover:text-white">
-            Back
-          </button>
-        )}
-        {isLast ? (
-          next ? (
-            <Link href={`/learn/${next.slug}`} className="rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-[#111]">
-              Next: {next.title}
-            </Link>
-          ) : (
-            <Link href="/learn" className="rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-[#111]">
-              All lessons
-            </Link>
-          )
-        ) : (
+    <>
+      <div ref={ringRef} className="coach-ring" aria-hidden style={{ opacity: 0 }} />
+      <div
+        ref={cardRef}
+        role="dialog"
+        aria-label={`Lesson step ${index + 1} of ${tutorial.steps.length}: ${step.title}`}
+        className="coach-card max-w-[calc(100vw-24px)] rounded-2xl border border-white/15 bg-[rgb(18_18_20/0.9)] p-4 text-[#f5f5f7] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl"
+        style={{ width: CARD_WIDTH }}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[11px] font-semibold tracking-wide text-[#ff8a9b] uppercase">
+            Step {index + 1} of {tutorial.steps.length}
+          </span>
           <button
             type="button"
-            onClick={() => goTo(index + 1)}
-            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ${done || !step.check ? "bg-white text-[#111]" : "border border-white/20 text-white/70 hover:text-white"}`}
+            onClick={() => setHidden(true)}
+            className="press rounded-lg px-1.5 py-0.5 text-xs text-white/60 hover:text-white"
+            aria-label="Hide lesson"
           >
-            {done || !step.check ? "Next" : "Skip"}
+            Hide
           </button>
+        </div>
+        <p className="font-medium">{step.title}</p>
+        <p className="mt-1 text-sm leading-snug text-white/70">{step.body}</p>
+
+        {isLast && (
+          <ul className="mt-3 flex flex-col gap-1.5 text-sm">
+            {tutorial.recap.map((r) => (
+              <li key={r} className="flex gap-2">
+                <span className="text-[#ff8a9b]">✓</span>
+                {r}
+              </li>
+            ))}
+          </ul>
         )}
+
+        {done && !isLast && <p className="mt-2 text-sm font-medium text-[#ff8a9b]">Nice, that&apos;s it.</p>}
+
+        <div className="mt-3 flex items-center gap-2">
+          <div className="mr-auto flex gap-1" aria-hidden>
+            {tutorial.steps.map((s, i) => (
+              <span
+                key={s.id}
+                className={`h-1.5 w-4 rounded-full ${i < index ? "bg-white/70" : i === index ? "bg-accent" : "bg-white/15"}`}
+              />
+            ))}
+          </div>
+          {index > 0 && (
+            <button
+              type="button"
+              onClick={() => goTo(index - 1)}
+              className="press rounded-xl px-2 py-1 text-sm text-white/60 hover:text-white"
+            >
+              Back
+            </button>
+          )}
+          {isLast ? (
+            next ? (
+              <Link href={`/learn/${next.slug}`} className="press rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-[#111]">
+                Next: {next.title}
+              </Link>
+            ) : (
+              <Link href="/learn" className="press rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-[#111]">
+                All lessons
+              </Link>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={() => goTo(index + 1)}
+              className={`press rounded-xl px-3 py-1.5 text-sm font-semibold ${done || !step.check ? "bg-white text-[#111]" : "border border-white/20 text-white/70 hover:text-white"}`}
+            >
+              {done || !step.check ? "Next" : "Skip"}
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
+}
+
+/** Ancestors that clip their content (scroll columns, collapsible panels). */
+function clippingAncestors(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    const { overflowX, overflowY } = getComputedStyle(p);
+    if (/(auto|scroll|hidden|clip)/.test(overflowX + overflowY)) out.push(p);
+  }
+  return out;
 }

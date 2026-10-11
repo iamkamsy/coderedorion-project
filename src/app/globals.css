@@ -23,6 +23,7 @@
   --cool: #8e8e93;
   --danger: #d70015;
   --warn: #b25000;
+  --scrollbar: rgb(0 0 0 / 0.22);
   /* Apple system font: San Francisco on macOS and iOS. */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
@@ -43,6 +44,7 @@
   --cool: #c9c9bf;
   --danger: #ff6961;
   --warn: #ffb340;
+  --scrollbar: rgb(255 255 255 / 0.22);
   color: var(--text);
   color-scheme: dark;
 }
@@ -63,6 +65,7 @@
   --cool: #aeaeb2;
   --danger: #ff6961;
   --warn: #ffb340;
+  --scrollbar: rgb(255 255 255 / 0.22);
   color: var(--text);
   color-scheme: dark;
 }
@@ -114,6 +117,13 @@ input[type="range"].cool {
   outline-offset: 2px;
 }
 
+/* Thin scrollbars with an invisible track, close to macOS overlay scrollbars. Chrome and Firefox
+   follow these; Safari ignores them and keeps its own overlay scrollbars, which already look this way. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
 /* Frosted glass surface: translucent, blurred, with a bright top edge like light catching glass. */
 @utility glass {
   background-color: var(--panel);
@@ -161,11 +171,68 @@ button.bg-accent {
     0 6px 18px -6px var(--accent);
 }
 
-/* Tutorial coach: the control the current step points at. */
-[data-tour-active] {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-  border-radius: 12px;
-  box-shadow: 0 0 24px -6px var(--accent);
-  transition: outline-color 0.2s;
+/* Every clickable control shows the hand cursor; disabled ones don't. (Tailwind's
+   preflight resets buttons to the default arrow.) */
+@layer base {
+  button:not(:disabled),
+  [role="button"],
+  [role="switch"],
+  [role="tab"],
+  [role="radio"],
+  a[href],
+  summary,
+  select,
+  input[type="range"]:not(:disabled),
+  label:has(> input[type="checkbox"]) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* Small lift on hover and a press-in on click or tap, for primary actions. */
+@utility press {
+  transition:
+    transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.16s,
+    color 0.16s;
+  &:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.04);
+  }
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.95);
+    transition-duration: 0.06s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &:hover:not(:disabled),
+    &:active:not(:disabled) {
+      transform: none;
+    }
+  }
+}
+
+/* Tutorial coach. Both live at the page root and are moved with transforms, so scroll
+   columns and collapsible panels can't clip them while the page scrolls. */
+.coach-card {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  will-change: transform;
+}
+
+.coach-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 39;
+  pointer-events: none;
+  border-radius: 14px;
+  border: 2px solid var(--accent);
+  box-shadow:
+    0 0 0 4px rgb(250 45 72 / 0.18),
+    0 0 28px -4px var(--accent);
+  will-change: transform, width, height;
+  transition: opacity 0.2s;
 }
