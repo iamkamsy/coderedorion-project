@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { checkPasses, type CoachSignals } from "@/tutorials/checks";
 import { nextTutorial, type Tutorial } from "@/tutorials";
 import { placeCard, visibleRect, type Side } from "@/tutorials/placement";
+import { isCoachVoiceOn, setCoachVoice, speak, stopSpeaking, useCoachVoice, useSpeaking } from "@/lib/speech";
 
 const CARD_WIDTH = 320;
 const GAP = 12;
@@ -46,6 +47,8 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
   // Those steps wait for Next instead of skipping ahead on their own.
   const [doneOnArrival, setDoneOnArrival] = useState(() => checkPasses(tutorial.steps[0].check, signals));
   const [hidden, setHidden] = useState(false);
+  const voiceOn = useCoachVoice();
+  const speaking = useSpeaking();
   const cardRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
   const step = tutorial.steps[index];
@@ -139,6 +142,16 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [hidden, step.target, index, rootRef]);
 
+  // Read each step aloud while the voice is on. The toggle is shared by every card, so it
+  // carries over from step to step and lesson to lesson.
+  const spoken = isLast ? `${step.title}. ${step.body} ${tutorial.recap.join(" ")}` : `${step.title}. ${step.body}`;
+  useEffect(() => {
+    if (hidden || !voiceOn || !isCoachVoiceOn()) return;
+    void speak(spoken);
+  }, [hidden, voiceOn, spoken]);
+
+  useEffect(() => stopSpeaking, []);
+
   if (hidden) {
     return (
       <button
@@ -165,14 +178,39 @@ export function TutorialCoach({ tutorial, signals, rootRef }: Props) {
           <span className="text-[11px] font-semibold tracking-wide text-[#ff8a9b] uppercase">
             Step {index + 1} of {tutorial.steps.length}
           </span>
-          <button
-            type="button"
-            onClick={() => setHidden(true)}
-            className="press rounded-lg px-1.5 py-0.5 text-xs text-white/60 hover:text-white"
-            aria-label="Hide lesson"
-          >
-            Hide
-          </button>
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={voiceOn}
+              onClick={() => setCoachVoice(!voiceOn)}
+              title={voiceOn ? "Voice coach on: steps are read aloud" : "Voice coach off"}
+              aria-label="Read steps aloud"
+              className={`press flex items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-xs ${voiceOn ? "text-white" : "text-white/50 hover:text-white"}`}
+            >
+              {voiceOn && speaking ? (
+                <span className="flex items-end gap-[2px]" aria-hidden>
+                  <span className="wave-dot" />
+                  <span className="wave-dot" />
+                  <span className="wave-dot" />
+                </span>
+              ) : (
+                <SpeakerIcon on={voiceOn} />
+              )}
+              Voice
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                stopSpeaking();
+                setHidden(true);
+              }}
+              className="press rounded-lg px-1.5 py-0.5 text-xs text-white/60 hover:text-white"
+              aria-label="Hide lesson"
+            >
+              Hide
+            </button>
+          </span>
         </div>
         <p className="font-medium">{step.title}</p>
         <p className="mt-1 text-sm leading-snug text-white/70">{step.body}</p>
@@ -241,4 +279,17 @@ function clippingAncestors(el: HTMLElement): HTMLElement[] {
     if (/(auto|scroll|hidden|clip)/.test(overflowX + overflowY)) out.push(p);
   }
   return out;
+}
+
+function SpeakerIcon({ on }: { on: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M3.5 8h3l4-3.5v11L6.5 12h-3Z" strokeLinejoin="round" />
+      {on ? (
+        <path d="M13.5 7.5a3.5 3.5 0 0 1 0 5M15.5 5.5a6.5 6.5 0 0 1 0 9" strokeLinecap="round" />
+      ) : (
+        <path d="m13.5 8 4 4m0-4-4 4" strokeLinecap="round" />
+      )}
+    </svg>
+  );
 }

@@ -8,6 +8,7 @@ import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder";
+import { speak, stopSpeaking, useCoachVoice } from "@/lib/speech";
 import { toLastSentence } from "@/lib/text";
 import { THINKING_PHRASES, ThinkingIndicator } from "./ThinkingIndicator";
 
@@ -59,6 +60,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const voiceOn = useCoachVoice();
   /** Asked, but no words have streamed back yet. */
   const [waiting, setWaiting] = useState(false);
   const [voice, setVoice] = useState<"idle" | "recording" | "transcribing">("idle");
@@ -99,8 +101,11 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
       });
       if (!answer.trim()) throw new Error("The AI could not answer right now.");
       // A stream that stopped midway (length cap or dropped connection) ends on its last full sentence.
-      setMessages((m) => [...m.slice(0, -1), { role: "assistant", text: toLastSentence(answer.trim()) }]);
+      const final = toLastSentence(answer.trim());
+      setMessages((m) => [...m.slice(0, -1), { role: "assistant", text: final }]);
       onAsked?.();
+      // In a lesson with the voice coach on, the coach reads the answer aloud.
+      if (lesson && voiceOn) void speak(final);
     } catch (err) {
       const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
       setMessages((m) => [...m.filter((x) => !x.streaming), { role: "error", text: `${msg} The lesson keeps working without it.` }]);
@@ -138,6 +143,8 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, l
   const toggleRecording = async () => {
     if (voice === "recording") return finishRecording();
     if (voice !== "idle" || loading) return;
+    // Silence the coach first so the mic doesn't pick up its voice.
+    stopSpeaking();
     try {
       recordingRef.current = await startRecording();
       setVoice("recording");
