@@ -34,6 +34,8 @@ interface Props {
 type CalStep = null | "closed" | "open";
 const CAL_KEY = "gesture-rack.calibration";
 const CAL_SAMPLE_MS = 1500;
+/** How long an open palm must be held before it triggers the panic stop, so a passing relax doesn't trip it. */
+const OPEN_HAND_HOLD_MS = 2000;
 
 function loadCalibration(): Calibration {
   try {
@@ -70,6 +72,8 @@ export function Stage(props: Props) {
   const calStepRef = useRef<CalStep>(null);
   /** Last live (non-frozen) value per gesture, held steady while that hand's pinky is stuck out. */
   const heldValuesRef = useRef<GestureValues>({ pinch_left: null, pinch_right: null });
+  /** Timestamp an open palm was first seen this streak, or null when no hand is currently open. */
+  const openSinceRef = useRef<number | null>(null);
 
   const [status, setStatus] = useState<CameraStatus>("off");
   const [anchors, setAnchors] = useState<Partial<Record<Gesture, { x: number; y: number }>>>({});
@@ -109,7 +113,13 @@ export function Stage(props: Props) {
       setAnchors(nextAnchors);
       onTracked(next);
       // Only outside calibration, so holding an open palm to sample "open" during pinch calibration can't also stop audio.
-      if (anyOpen && !calStepRef.current) onOpenHand();
+      if (anyOpen && !calStepRef.current) {
+        if (openSinceRef.current === null) openSinceRef.current = frame.timestamp;
+        // Require the hold, not just a momentary open palm, so relaxing the hand mid-pinch doesn't trip it.
+        if (frame.timestamp - openSinceRef.current >= OPEN_HAND_HOLD_MS) onOpenHand();
+      } else {
+        openSinceRef.current = null;
+      }
       drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current);
     },
     [onTracked, onOpenHand],

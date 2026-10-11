@@ -10,7 +10,7 @@ export function formatParam(spec: Pick<ParamSpec, "unit">, value: number): strin
   return value.toFixed(2);
 }
 
-export const GESTURE_LABEL = { pinch_left: "Left pinch", pinch_right: "Right pinch" } as const;
+export const GESTURE_LABEL = { pinch_left: "Left Pinch", pinch_right: "Right Pinch" } as const;
 
 /** A plain-English description of a hand-picked mapping, for the Live Mapping summary line. */
 export function summarizeMapping(mapping: Mapping): string {

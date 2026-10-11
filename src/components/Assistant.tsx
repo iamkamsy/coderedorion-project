@@ -8,6 +8,7 @@ import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
+import { Collapsible } from "./Collapsible";
 
 export interface Proposal {
   mapping: Mapping;
@@ -107,11 +108,14 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
           </button>
         </div>
         <p className="mt-1 text-[13px] leading-snug">{activeSummary}</p>
-        <div className="mt-2 flex flex-col gap-1.5 border-t border-border pt-2">
-          <p className="text-[10px] text-muted">Choose what each hand controls:</p>
-          {GESTURES.map((g) => (
-            <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
-          ))}
+        <div className="mt-2 border-t border-border">
+          <Collapsible title="Choose what each hand controls" level="item">
+            <div className="flex flex-col gap-2.5">
+              {GESTURES.map((g) => (
+                <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
+              ))}
+            </div>
+          </Collapsible>
         </div>
       </div>
 
@@ -241,31 +245,46 @@ function HandPicker({
   modules: readonly EffectId[];
   onToggle: (gesture: Gesture, plugin: string, param: string) => void;
 }) {
+  const otherGesture = GESTURES.find((g) => g !== gesture)!;
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-[11px] font-medium text-muted">{GESTURE_LABEL[gesture]}</p>
-      <div className="flex flex-wrap gap-1" role="group" aria-label={`${GESTURE_LABEL[gesture]} targets`}>
-        {modules.flatMap((id) =>
-          specsForPlugin(id).map((spec) => {
-            const bound = isTargetBound(mapping, gesture, spec.plugin, spec.param);
-            const plugin = PLUGINS.find((p) => p.id === spec.plugin)?.label ?? spec.plugin;
-            return (
-              <button
-                key={`${spec.plugin}.${spec.param}`}
-                type="button"
-                onClick={() => onToggle(gesture, spec.plugin, spec.param)}
-                aria-pressed={bound}
-                className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                  bound
-                    ? "bg-accent/15 text-accent-text"
-                    : "border border-border text-muted hover:border-accent/60 hover:text-accent-text"
-                }`}
-              >
-                {plugin} {spec.label}
-              </button>
-            );
-          }),
-        )}
+      <p className="text-[13px] font-semibold text-text">{GESTURE_LABEL[gesture]}</p>
+      <div className="flex flex-col gap-1">
+        {modules.map((id) => {
+          const specs = specsForPlugin(id);
+          if (specs.length === 0) return null;
+          const plugin = PLUGINS.find((p) => p.id === id)?.label ?? id;
+          return (
+            <div key={id} className="flex flex-wrap items-center gap-1.5" role="group" aria-label={`${GESTURE_LABEL[gesture]} ${plugin} targets`}>
+              <span className="text-[10px] text-muted">{plugin}:</span>
+              <div className="flex flex-wrap gap-1">
+                {specs.map((spec) => {
+                  const bound = isTargetBound(mapping, gesture, spec.plugin, spec.param);
+                  const takenByOtherHand = !bound && isTargetBound(mapping, otherGesture, spec.plugin, spec.param);
+                  return (
+                    <button
+                      key={`${spec.plugin}.${spec.param}`}
+                      type="button"
+                      disabled={takenByOtherHand}
+                      onClick={() => onToggle(gesture, spec.plugin, spec.param)}
+                      aria-pressed={bound}
+                      title={takenByOtherHand ? `${GESTURE_LABEL[otherGesture]} already controls this` : undefined}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        bound
+                          ? "bg-accent/15 text-accent-text"
+                          : takenByOtherHand
+                            ? "cursor-not-allowed border border-border/50 text-muted/40"
+                            : "border border-border text-muted hover:border-accent/60 hover:text-accent-text"
+                      }`}
+                    >
+                      {spec.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
