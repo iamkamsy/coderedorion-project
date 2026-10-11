@@ -1,15 +1,22 @@
-import { clampToSchema, getParamSpec, paramKey } from "@/audio/paramSchema";
+import { clampToSchema, getParamSpec, isMappable, paramKey } from "@/audio/paramSchema";
 import { MappingSchema, type Mapping } from "./types";
 
 export type ValidationResult = { ok: true; mapping: Mapping } | { ok: false; error: string };
 
+export interface ValidateOptions {
+  /** Only allow targets on these plugins (the effects loaded in the current rack). */
+  plugins?: readonly string[];
+}
+
 /**
  * Validate untrusted mapping JSON (for example Gemini output). Rejects unknown
- * plugins or params, duplicate gestures and duplicate targets, and clamps every
+ * or non-mappable plugins and params, duplicate gestures and duplicate targets, and clamps every
  * min and max into the parameter's hard safe range. min may exceed max, which
- * inverts the gesture direction.
+ * inverts the gesture direction. With `plugins`, also rejects targets on effects that
+ * are not loaded, so a tutorial's rack cannot be driven outside its own effects.
  */
-export function validateMapping(input: unknown): ValidationResult {
+export function validateMapping(input: unknown, options: ValidateOptions = {}): ValidationResult {
+  const allowed = options.plugins ? new Set(options.plugins) : null;
   const parsed = MappingSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -24,7 +31,10 @@ export function validateMapping(input: unknown): ValidationResult {
     const seenTargets = new Set<string>();
     for (const t of m.targets) {
       const key = paramKey(t.plugin, t.param);
-      if (!getParamSpec(t.plugin, t.param)) return { ok: false, error: `Unknown parameter ${key}` };
+      const spec = getParamSpec(t.plugin, t.param);
+      if (!spec) return { ok: false, error: `Unknown parameter ${key}` };
+      if (!isMappable(spec)) return { ok: false, error: `Parameter ${key} cannot be mapped to a gesture` };
+      if (allowed && !allowed.has(t.plugin)) return { ok: false, error: `${t.plugin} is not loaded in this rack` };
       if (seenTargets.has(key)) return { ok: false, error: `Parameter ${key} is targeted twice by ${m.gesture}` };
       seenTargets.add(key);
     }

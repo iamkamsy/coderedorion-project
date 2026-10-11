@@ -61,7 +61,15 @@ Open <http://localhost:3000> in **Chrome**. Click **Start audio**, then either:
 - click **Enable camera** and pinch thumb and index finger in front of the webcam, or
 - drag up and down on the stage (or use the **Fake pinch** sliders) if you have no camera.
 
-Use headphones, especially with the microphone source.
+**Stop audio** in the top bar (or **Esc** anywhere) fades the output to silence in about 50 ms. Tracking and inputs keep running, so **Resume audio** brings the sound back instantly.
+
+Use headphones, especially with a live source. The audio source menu has three options:
+
+- **Test loop**: built-in synth, no input needed.
+- **Vocal mic**: browser noise suppression on, 100 Hz low cut, and a noise gate. Use a close headset mic in noisy rooms. The gate only mutes the gaps between phrases; it cannot remove loud music _while_ you sing.
+- **Instrument / line in**: raw signal (no suppression, so the tone survives) with a 40 Hz low cut. Use an audio interface for guitar.
+
+The rack's **Input** module sets the low cut and gate threshold, and shows whether the gate is open. Plans for separate voice-command and instrument inputs are in [`docs/plans/dual-input.md`](docs/plans/dual-input.md).
 
 ### 5. Set up the database (DevOps, once per database)
 
@@ -106,13 +114,24 @@ Chat intent -> POST /api/mapping -> Gemini (structured JSON) -> validate + clamp
 - **Limiter is always on.** Every parameter is clamped to its safe range in `src/audio/paramSchema.ts`, and every change ramps.
 - **Gemini output is untrusted.** It is validated on the server and again on the client.
 
+## Lessons (`/learn`)
+
+Three bite-sized lessons for beginners. Each one loads a small rack with only the effects it teaches, plus presets, a step-by-step coach and an assistant that can answer questions:
+
+1. **Echoes in time** (filter, delay): the demo lesson
+2. **Grit and warmth** (distortion, filter): preview
+3. **Movement** (phaser, reverb): preview
+
+Lessons are data files in `src/tutorials/`. To add one, copy an existing file, add it to `src/tutorials/index.ts`, and run `pnpm test`, which checks every preset, mapping, step target and check against the real rack. Each lesson visit is an isolated session (its own rack, data session and state); see `docs/plans/tutorials.md`.
+
 ## Project layout
 
 ```
 src/
   app/              pages (/ and /dashboard) and API route handlers (app/api/*)
-  audio/            paramSchema.ts (single source of truth for params), rack.ts (Tone.js)
+  audio/            paramSchema.ts (single source of truth for params), rackSpec.ts, modules.ts, rack.ts (Tone.js)
   gesture/          pinch.ts (ratio + calibration), oneEuro.ts, tracker.ts (MediaPipe)
+  tutorials/        lesson data (Zod-validated), coach checks
   mapping/          types.ts (the mapping contract + Zod), validate.ts, engine.ts, defaults.ts
   ai/               gemini.ts (server only)
   db/               client.ts (server only, RLS owner scoping)

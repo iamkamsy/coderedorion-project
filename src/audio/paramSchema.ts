@@ -11,6 +11,8 @@ export interface ParamSpec {
   curve: Curve;
   /** Minimum time between applied changes. Used where a change is expensive. */
   throttleMs?: number;
+  /** False for parameters that gestures and Gemini may not bind (input conditioning). Defaults to true. */
+  mappable?: boolean;
   description: string;
 }
 
@@ -20,6 +22,87 @@ export interface ParamSpec {
  * mapping (including Gemini output) asks for.
  */
 export const PARAM_SPECS = [
+  {
+    plugin: "input",
+    param: "lowCut",
+    label: "Low cut",
+    unit: "Hz",
+    min: 20,
+    max: 300,
+    default: 100,
+    curve: "exp",
+    mappable: false,
+    description: "High-pass on live input. Removes rumble and bass bleed from speakers in the room.",
+  },
+  {
+    plugin: "input",
+    param: "gateThreshold",
+    label: "Gate",
+    unit: "dB",
+    min: -90,
+    max: -20,
+    default: -50,
+    curve: "linear",
+    mappable: false,
+    description: "Noise gate on live input. Signal quieter than this is muted between phrases.",
+  },
+  {
+    plugin: "distortion",
+    param: "drive",
+    label: "Drive",
+    unit: "",
+    min: 0,
+    max: 0.9,
+    default: 0.3,
+    curve: "linear",
+    throttleMs: 40,
+    description: "How hard the signal is pushed into saturation. Low is warm, high is fuzzy and aggressive.",
+  },
+  {
+    plugin: "distortion",
+    param: "wet",
+    label: "Mix",
+    unit: "",
+    min: 0,
+    max: 1,
+    default: 1,
+    curve: "linear",
+    description: "Blend of distorted and clean signal.",
+  },
+  {
+    plugin: "phaser",
+    param: "frequency",
+    label: "Rate",
+    unit: "Hz",
+    min: 0.1,
+    max: 8,
+    default: 0.5,
+    curve: "exp",
+    description: "How fast the phaser sweeps. Slow is a gentle swirl, fast is a wobble.",
+  },
+  {
+    plugin: "phaser",
+    param: "octaves",
+    label: "Depth",
+    unit: "oct",
+    min: 1,
+    max: 6,
+    default: 3,
+    curve: "linear",
+    throttleMs: 50,
+    description: "How far the sweep travels. Deeper is a more dramatic whoosh.",
+  },
+  {
+    plugin: "phaser",
+    param: "wet",
+    label: "Mix",
+    unit: "",
+    min: 0,
+    max: 0.9,
+    default: 0.5,
+    curve: "linear",
+    description: "Blend of phased and clean signal.",
+  },
   {
     plugin: "reverb",
     param: "wet",
@@ -104,9 +187,12 @@ export type PluginId = (typeof PARAM_SPECS)[number]["plugin"];
 export type ParamKey = `${(typeof PARAM_SPECS)[number]["plugin"]}.${(typeof PARAM_SPECS)[number]["param"]}`;
 
 export const PLUGINS: { id: PluginId; label: string }[] = [
-  { id: "reverb", label: "Reverb" },
-  { id: "delay", label: "Delay" },
+  { id: "input", label: "Input" },
+  { id: "distortion", label: "Distortion" },
+  { id: "phaser", label: "Phaser" },
   { id: "filter", label: "Filter" },
+  { id: "delay", label: "Delay" },
+  { id: "reverb", label: "Reverb" },
 ];
 
 const SPEC_BY_KEY = new Map<string, ParamSpec>(PARAM_SPECS.map((s) => [`${s.plugin}.${s.param}`, s]));
@@ -119,6 +205,13 @@ export function getParamSpec(plugin: string, param: string): ParamSpec | undefin
   return SPEC_BY_KEY.get(paramKey(plugin, param));
 }
 
+export function isMappable(spec: ParamSpec): boolean {
+  return spec.mappable !== false;
+}
+
+/** Parameters a gesture mapping may target. */
+export const MAPPABLE_SPECS: ParamSpec[] = PARAM_SPECS.filter(isMappable);
+
 export function specsForPlugin(plugin: PluginId): ParamSpec[] {
   return PARAM_SPECS.filter((s) => s.plugin === plugin);
 }
@@ -129,8 +222,4 @@ export function clampToSchema(plugin: string, param: string, value: number): num
   if (!spec) throw new Error(`Unknown parameter ${paramKey(plugin, param)}`);
   if (!Number.isFinite(value)) return spec.default;
   return Math.min(spec.max, Math.max(spec.min, value));
-}
-
-export function defaultParamValues(): Record<string, number> {
-  return Object.fromEntries(PARAM_SPECS.map((s) => [paramKey(s.plugin, s.param), s.default]));
 }

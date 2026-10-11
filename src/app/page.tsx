@@ -1,5 +1,10 @@
+import { SessionBoundary } from "@/components/SessionBoundary";
 import { Studio } from "@/components/Studio";
 
 export default function Home() {
-  return <Studio />;
+  return (
+    <SessionBoundary>
+      <Studio />
+    </SessionBoundary>
+  );
 }

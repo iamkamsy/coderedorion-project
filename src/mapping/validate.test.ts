@@ -98,3 +98,37 @@ describe("validateMapping", () => {
     ).toBe(false);
   });
 });
+
+describe("input conditioning params", () => {
+  it("cannot be bound to a gesture", () => {
+    for (const param of ["lowCut", "gateThreshold"]) {
+      const r = validateMapping({
+        mappings: [{ gesture: "pinch_right", targets: [{ plugin: "input", param, min: 0, max: 1, curve: "linear" }] }],
+      });
+      expect(r.ok).toBe(false);
+    }
+  });
+
+  it("are clamped to their safe ranges", () => {
+    expect(clampToSchema("input", "lowCut", 5)).toBe(20);
+    expect(clampToSchema("input", "lowCut", 5000)).toBe(300);
+    expect(clampToSchema("input", "gateThreshold", 0)).toBe(-20);
+  });
+});
+
+describe("plugin allowlist", () => {
+  const delayOnly = { plugins: ["delay"] };
+
+  it("accepts targets on loaded effects", () => {
+    const r = validateMapping(
+      { mappings: [{ gesture: "pinch_right", targets: [{ plugin: "delay", param: "feedback", min: 0, max: 0.6, curve: "linear" }] }] },
+      delayOnly,
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects targets on effects that are not loaded", () => {
+    const r = validateMapping(DEFAULT_MAPPING, delayOnly);
+    expect(r.ok).toBe(false);
+  });
+});
