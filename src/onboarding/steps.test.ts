@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { STUDIO_MODULES } from "@/audio/rackSpec";
-import { validateMapping } from "@/mapping/validate";
 import {
-  DREAMY_FALLBACK,
   ONBOARDING_STEPS,
-  TOUR_INTENT,
   isRevealed,
   lingerSeconds,
   pinchedClosed,
   stepDone,
-  tryTarget,
   widenSeen,
   type OnboardingSignals,
   type Seen,
@@ -174,8 +169,8 @@ describe("pointers", () => {
     expect(step("spectrum").pointsAt).toBe("pinch_left");
   });
 
-  it("the assistant step points at the suggestion the tour taps", () => {
-    expect(step("assistant").pointers.map((p) => p.target)).toEqual([tryTarget(TOUR_INTENT)]);
+  it("the assistant step points at the voice assistant", () => {
+    expect(step("assistant").pointers.map((p) => p.target)).toEqual(["voice"]);
   });
 });
 
@@ -187,11 +182,5 @@ describe("lingerSeconds", () => {
 
   it("moves on quickly once the palm has silenced the sound", () => {
     expect(lingerSeconds(step("palm"))).toBe(1);
-  });
-});
-
-describe("DREAMY_FALLBACK", () => {
-  it("is a mapping the studio rack accepts unchanged", () => {
-    expect(validateMapping(DREAMY_FALLBACK.mapping, { plugins: STUDIO_MODULES })).toEqual({ ok: true, mapping: DREAMY_FALLBACK.mapping });
   });
 });

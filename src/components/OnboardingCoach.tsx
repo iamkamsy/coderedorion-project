@@ -2,16 +2,12 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { Gesture } from "@/mapping/types";
-import { ONBOARDING_STEPS, TOUR_INTENT, tryTarget, type Pointer } from "@/onboarding/steps";
+import { ONBOARDING_STEPS, type Pointer } from "@/onboarding/steps";
 import type { Onboarding } from "@/onboarding/useOnboarding";
 import { isCoachVoiceOn, setCoachVoice, speak, stopSpeaking, useCoachVoice, useSpeaking } from "@/lib/speech";
 import { GestureDemo } from "./GestureDemo";
 import { SpeakerIcon } from "./TutorialCoach";
 
-/** With the voice off, long enough to read the step before the tour taps the suggestion. */
-const AUTO_TAP_DELAY_MS = 5000;
-/** With the voice on, the pause between the coach finishing the step and the tap. */
-const AUTO_TAP_AFTER_VOICE_MS = 1200;
 const POINTER_SIZE = 22;
 const POINTER_GAP = 4;
 const CARD =
@@ -85,17 +81,6 @@ export function OnboardingCoach({ tour, bound, rootRef, onBegin, onSkip, onFinis
     tick();
     return () => cancelAnimationFrame(raf);
   }, [pointers, rootRef]);
-
-  // On the assistant step the tour taps the suggestion for the user, once the coach has finished reading the step.
-  const autoTap = step?.id === "assistant" && !done && !speaking;
-  useEffect(() => {
-    if (!autoTap) return;
-    const id = setTimeout(
-      () => rootRef.current?.querySelector<HTMLButtonElement>(`[data-tour="${tryTarget(TOUR_INTENT)}"]`)?.click(),
-      voiceOn ? AUTO_TAP_AFTER_VOICE_MS : AUTO_TAP_DELAY_MS,
-    );
-    return () => clearTimeout(id);
-  }, [autoTap, voiceOn, rootRef]);
 
   if (tour.phase === "welcome") {
     return (

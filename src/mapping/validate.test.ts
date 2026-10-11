@@ -100,12 +100,17 @@ describe("validateMapping", () => {
 });
 
 describe("input conditioning params", () => {
-  it("cannot be bound to a gesture", () => {
+  it("can be bound to a gesture in any rack, clamped to the safe range", () => {
     for (const param of ["lowCut", "gateThreshold"]) {
-      const r = validateMapping({
-        mappings: [{ gesture: "pinch_right", targets: [{ plugin: "input", param, min: 0, max: 1, curve: "linear" }] }],
-      });
-      expect(r.ok).toBe(false);
+      const r = validateMapping(
+        { mappings: [{ gesture: "pinch_right", targets: [{ plugin: "input", param, min: -1000, max: 1000, curve: "linear" }] }] },
+        { plugins: ["delay"] },
+      );
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        const t = r.mapping.mappings[0].targets[0];
+        expect([t.min, t.max]).toEqual(param === "lowCut" ? [20, 300] : [-90, -20]);
+      }
     }
   });
 

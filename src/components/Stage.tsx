@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useImperativeHandle, useRef, useState } from "react";
 import type { HandTracker, TrackerFrame } from "@/gesture/tracker";
 import { HoldTimer } from "@/gesture/hold";
 import { HandLock } from "@/gesture/lock";
@@ -46,6 +46,8 @@ interface Props {
   expanded: boolean;
   /** Omit to hide the expand button. */
   onToggleExpand?: () => void;
+  /** Shown over the camera, such as a mapping the voice assistant proposed. */
+  card?: React.ReactNode;
 }
 
 type CalStep = null | "closed" | "open";
@@ -93,6 +95,7 @@ export function Stage(props: Props) {
     chips,
     expanded,
     onToggleExpand,
+    card,
   } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -211,15 +214,26 @@ export function Stage(props: Props) {
     streamRef.current = null;
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const openCamera = useCallback(async () => {
     const video = videoRef.current;
     if (!video) return;
     updateStatus("requesting");
+    const video720 = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" };
     try {
-      streamRef.current = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: false,
-      });
+      // Ask for the mic in the same prompt, so the voice assistant can listen later without a second
+      // prompt. It opens its own mic stream, so this one is dropped. No mic at all: camera alone.
+      const stream = await navigator.mediaDevices
+        .getUserMedia({ video: video720, audio: true })
+        .catch((err: unknown) =>
+          err instanceof DOMException && err.name === "NotFoundError"
+            ? navigator.mediaDevices.getUserMedia({ video: video720, audio: false })
+            : Promise.reject(err),
+        );
+      for (const t of stream.getAudioTracks()) {
+        t.stop();
+        stream.removeTrack(t);
+      }
+      streamRef.current = stream;
     } catch (err) {
       const denied = err instanceof DOMException && (err.name === "NotAllowedError" || err.name === "SecurityError");
       updateStatus(denied ? "denied" : "error");
@@ -244,6 +258,16 @@ export function Stage(props: Props) {
     }
   }, [handleFrame, onInputModeChange, stopCamera, updateStatus]);
 
+  const pendingStartRef = useRef<Promise<void> | null>(null);
+  /** Opens the camera once: a call while a start is still in flight (say, on the permission prompt) joins it. */
+  const startCamera = useCallback(
+    () =>
+      (pendingStartRef.current ??= openCamera().finally(() => {
+        pendingStartRef.current = null;
+      })),
+    [openCamera],
+  );
+
   useEffect(() => stopCamera, [stopCamera]);
 
   useImperativeHandle(
@@ -255,6 +279,16 @@ export function Stage(props: Props) {
     }),
     [startCamera],
   );
+
+  // Start the camera (and the mic permission) as soon as the studio opens. The ref keeps React's
+  // dev double-mount from opening the camera twice.
+  const autoStartedRef = useRef(false);
+  const autoStart = useEffectEvent(() => void startCamera());
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    autoStart();
+  }, []);
 
   const runCalibration = useCallback(async () => {
     const collect = async (step: Exclude<CalStep, null>) => {
@@ -325,6 +359,12 @@ export function Stage(props: Props) {
               );
             })}
 
+          {card && (
+            // Bottom left, just above the pinch meters. Its own dark box style, so it reads the same over any video.
+            <div className="surface-graphite absolute bottom-14 left-3 z-10 w-[min(24rem,calc(100%-1.5rem))] rounded-2xl bg-[rgb(18_18_20/0.82)] shadow-[0_16px_40px_-12px_rgb(0_0_0/0.6)] backdrop-blur-2xl">
+              {card}
+            </div>
+          )}
           <StageOverlay status={status} inputMode={inputMode} noHands={noHands} calStep={calStep} onEnable={startCamera} />
 
           <div className="pointer-events-none absolute bottom-3 left-3 flex gap-2">

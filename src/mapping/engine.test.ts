@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MAPPING } from "./defaults";
-import { applyMapping, boundParams, computeChanges, isTargetBound, scaleValue, toggleTarget } from "./engine";
+import { applyMapping, boundParams, computeChanges, isTargetBound, resolveParamRefs, scaleValue, toggleTarget } from "./engine";
 import type { Mapping } from "./types";
 
 describe("scaleValue", () => {
@@ -114,5 +114,34 @@ describe("toggleTarget", () => {
 
   it("returns null for an unknown plugin or parameter", () => {
     expect(toggleTarget(DEFAULT_MAPPING, "pinch_right", "nope", "nope")).toBeNull();
+  });
+});
+
+describe("locking", () => {
+  const mapping: Mapping = {
+    mappings: [
+      {
+        gesture: "pinch_right",
+        targets: [
+          { plugin: "phaser", param: "frequency", min: 0.1, max: 4, curve: "linear" },
+          { plugin: "phaser", param: "wet", min: 0, max: 1, curve: "linear" },
+        ],
+      },
+      { gesture: "pinch_left", targets: [{ plugin: "filter", param: "frequency", min: 200, max: 8000, curve: "exp" }] },
+    ],
+  };
+
+  it("skips locked params and keeps moving the rest", () => {
+    const changes = computeChanges(mapping, { pinch_left: 0.5, pinch_right: 1 }, new Set(["phaser.frequency"]));
+    expect(changes.map((c) => `${c.plugin}.${c.param}`).sort()).toEqual(["filter.frequency", "phaser.wet"]);
+  });
+
+  it("resolves a hand, everything, or single params in any case", () => {
+    expect(resolveParamRefs("pinch_right", mapping).keys.sort()).toEqual(["phaser.frequency", "phaser.wet"]);
+    expect(resolveParamRefs("all", mapping).keys).toHaveLength(3);
+    expect(resolveParamRefs("Phaser Rate, delay.delaytime, wobble", mapping)).toEqual({
+      keys: ["phaser.frequency", "delay.delayTime"],
+      unknown: ["wobble"],
+    });
   });
 });

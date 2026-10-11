@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getParamSpec, specsForPlugin, PLUGINS } from "@/audio/paramSchema";
-import type { EffectId } from "@/audio/rackSpec";
+import { rackPlugins, type EffectId } from "@/audio/rackSpec";
 import { isTargetBound } from "@/mapping/engine";
 import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
@@ -10,7 +10,7 @@ import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
 import { tryTarget } from "@/onboarding/steps";
 import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder";
-import { speak, speakAfter, stopSpeaking, useCoachVoice } from "@/lib/speech";
+import { speak, stopSpeaking, useCoachVoice } from "@/lib/speech";
 import { toLastSentence } from "@/lib/text";
 import { THINKING_PHRASES, ThinkingIndicator } from "./ThinkingIndicator";
 import { Collapsible } from "./Collapsible";
@@ -41,28 +41,39 @@ async function readStream(body: ReadableStream<Uint8Array>, onText: (textSoFar: 
   }
 }
 
-const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
+/** Ask Gemini (through our route) for a mapping, validated for this rack. Throws a readable error. */
+export async function requestMapping(intent: string, modules: readonly EffectId[]): Promise<Proposal> {
+  const res = await fetch("/api/mapping", {
+    method: "POST",
+    headers: ownerHeaders(),
+    body: JSON.stringify({ intent, modules }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? "The AI request failed.");
+  const valid = validateMapping(data.mapping, { plugins: modules });
+  if (!valid.ok) throw new Error("The AI returned a mapping we could not use.");
+  return { mapping: valid.mapping, summary: String(data.summary ?? ""), intent };
+}
 
-/** The intro tour falls back to a built-in mapping after this long, so it never stalls. */
-const TOUR_TIMEOUT_MS = 8000;
+/** Error text for a failed AI request; a timeout's own message is not friendly. */
+export function aiErrorText(err: unknown): string {
+  return err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
+}
+
+const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
 
 type Mode = "ask" | "map";
 
 interface Props {
   modules: readonly EffectId[];
-  activeSummary: string;
   onApprove: (proposal: Proposal) => void;
-  onResetDefault: () => void;
-  mapping: Mapping;
-  onToggleParam: (gesture: Gesture, plugin: string, param: string) => void;
   /** In a lesson: questions to suggest, and the lesson the answers are about. */
   lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
   onAsked?: () => void;
-  /** During the intro tour: apply the mapping right away, and use `fallback` if the AI fails. */
-  tour?: { fallback: { mapping: Mapping; summary: string }; onApplied: () => void };
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked, tour }: Props) {
+export function Assistant({ modules, onApprove, lesson, onAsked }: Props) {
   // The studio only changes the sound; a lesson starts on questions.
   const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
@@ -164,14 +175,6 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
     }
   };
 
-  const applyForTour = (p: Proposal) => {
-    onApprove(p);
-    setMessages((m) => [...m, { role: "assistant", text: p.summary }, { role: "assistant", text: "Applied. Your pinch now drives it." }]);
-    // After the coach finishes reading the step, not over it.
-    if (voiceOn) void speakAfter(p.summary);
-    tour?.onApplied();
-  };
-
   const submit = async (raw: string) => {
     const text = raw.trim();
     if (!text || loading) return;
@@ -181,24 +184,11 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
     setMessages((m) => [...m, { role: "user", text }]);
     setLoading(true);
     try {
-      const res = await fetch("/api/mapping", {
-        method: "POST",
-        headers: ownerHeaders(),
-        body: JSON.stringify({ intent: text, modules }),
-        signal: AbortSignal.timeout(tour ? TOUR_TIMEOUT_MS : 20000),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "The AI request failed.");
-      const valid = validateMapping(data.mapping, { plugins: modules });
-      if (!valid.ok) throw new Error("The AI returned a mapping we could not use.");
-      const next = { mapping: valid.mapping, summary: String(data.summary ?? ""), intent: text };
-      if (tour) return applyForTour(next);
-      setProposal(next);
-      setMessages((m) => [...m, { role: "assistant", text: data.summary }]);
+      const p = await requestMapping(text, modules);
+      setProposal(p);
+      setMessages((m) => [...m, { role: "assistant", text: p.summary }]);
     } catch (err) {
-      if (tour) return applyForTour({ ...tour.fallback, intent: text });
-      const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
-      setMessages((m) => [...m, { role: "error", text: `${msg} The current mapping is still live.` }]);
+      setMessages((m) => [...m, { role: "error", text: `${aiErrorText(err)} The current mapping is still live.` }]);
     } finally {
       setLoading(false);
     }
@@ -206,25 +196,6 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
 
   return (
     <aside className="flex min-h-0 flex-col gap-2" aria-label="Assistant" data-tour="assistant">
-      <div className={`${box} p-2.5`}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-[11px] font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
-          <button type="button" onClick={onResetDefault} className="text-[11px] text-muted hover:text-text">
-            Reset to default
-          </button>
-        </div>
-        <p className="mt-1 text-[13px] leading-snug">{activeSummary}</p>
-        <div className="mt-2 border-t border-border">
-          <Collapsible title="Choose what each hand controls" level="item">
-            <div className="flex flex-col gap-2.5">
-              {GESTURES.map((g) => (
-                <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
-              ))}
-            </div>
-          </Collapsible>
-        </div>
-      </div>
-
       <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
         <div className="flex max-h-56 flex-1 flex-col gap-1.5 overflow-y-auto p-2.5" aria-live="polite">
           {messages.length === 0 && (
@@ -360,6 +331,34 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
   );
 }
 
+/** What each pinch drives right now, with a picker to change it by hand. */
+export function LiveMapping({
+  summary,
+  mapping,
+  modules,
+  onToggleParam,
+}: {
+  summary: string;
+  mapping: Mapping;
+  modules: readonly EffectId[];
+  onToggleParam: (gesture: Gesture, plugin: string, param: string) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-inset p-2.5">
+      <p className="text-[13px] leading-snug">{summary}</p>
+      <div className="mt-2 border-t border-border">
+        <Collapsible title="Choose what each hand controls" level="item">
+          <div className="flex flex-col gap-2.5">
+            {GESTURES.map((g) => (
+              <HandPicker key={g} gesture={g} mapping={mapping} modules={modules} onToggle={onToggleParam} />
+            ))}
+          </div>
+        </Collapsible>
+      </div>
+    </div>
+  );
+}
+
 function HandPicker({
   gesture,
   mapping,
@@ -376,7 +375,7 @@ function HandPicker({
     <div className="flex flex-col gap-1">
       <p className="text-[13px] font-semibold text-text">{GESTURE_LABEL[gesture]}</p>
       <div className="flex flex-col gap-1">
-        {modules.map((id) => {
+        {rackPlugins(modules).map((id) => {
           const specs = specsForPlugin(id);
           if (specs.length === 0) return null;
           const plugin = PLUGINS.find((p) => p.id === id)?.label ?? id;
@@ -421,7 +420,7 @@ function HandPicker({
   );
 }
 
-function MappingCard({ proposal, onApprove, onReject }: { proposal: Proposal; onApprove: () => void; onReject: () => void }) {
+export function MappingCard({ proposal, onApprove, onReject }: { proposal: Proposal; onApprove: () => void; onReject: () => void }) {
   return (
     <div className="rounded-xl border border-accent/50 bg-accent/5 p-3">
       <p className="text-xs font-semibold tracking-wide text-accent-text uppercase">Proposed mapping</p>

@@ -1,14 +1,16 @@
 import "server-only";
 import { ApiError, GoogleGenAI, type GenerateContentParameters } from "@google/genai";
 import { z } from "zod";
-import { MAPPABLE_SPECS, PLUGINS, type ParamSpec } from "@/audio/paramSchema";
-import { STUDIO_MODULES, type EffectId } from "@/audio/rackSpec";
+import { PARAM_SPECS, PLUGINS, type ParamSpec } from "@/audio/paramSchema";
+import { STUDIO_MODULES, rackPlugins, type EffectId } from "@/audio/rackSpec";
 import { CURVES, GESTURES, MAX_TARGETS_PER_GESTURE, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 
 const TIMEOUT_MS = 15000;
 /** Fast and light on free-tier rate limits: about 1.5 s to transcribe a short clip, under 1 s for text. */
 const DEFAULT_MODEL = "gemini-3.1-flash-lite";
+/** Free-tier quota is per model, so when the main model is out of quota this one usually still answers. */
+const FALLBACK_MODEL = "gemini-flash-lite-latest";
 
 /** What we ask Gemini for. Narrower than the contract so the model cannot invent params. */
 function outputSchema(specs: readonly ParamSpec[]) {
@@ -54,34 +56,38 @@ export type MappingProposal = { mapping: Mapping; summary: string };
 
 export class GeminiUnavailableError extends Error {}
 
-/** Gemini answered 503 (overloaded) or 429 (rate limited) twice in a row. */
+/** Every model we tried answered 503 (overloaded) or 429 (out of quota). */
 export class GeminiBusyError extends Error {}
 
 const RETRY_DELAY_MS = 800;
 
-/** Overloaded or rate limited: worth one retry. Free-tier keys hit 429 quickly. */
-function isTransient(err: unknown): boolean {
+function isTransient(err: unknown): err is ApiError {
   return err instanceof ApiError && (err.status === 503 || err.status === 429);
 }
 
-/** Run a Gemini call, retrying once when Gemini is briefly overloaded or rate limited. */
-async function withRetry<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (err) {
-    if (!isTransient(err)) throw err;
-    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-    try {
-      return await call();
-    } catch (retryErr) {
-      if (isTransient(retryErr)) throw new GeminiBusyError("Gemini is overloaded or rate limited");
-      throw retryErr;
+/**
+ * Run a Gemini call on the configured model, then on FALLBACK_MODEL. A 503 (briefly overloaded)
+ * gets one retry on the same model; a 429 moves straight on, because free-tier quotas are per
+ * model and per day, so retrying the same model only burns another request.
+ */
+async function withFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
+  const primary = process.env.GEMINI_MODEL || DEFAULT_MODEL;
+  for (const model of primary === FALLBACK_MODEL ? [primary] : [primary, FALLBACK_MODEL]) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await call(model);
+      } catch (err) {
+        if (!isTransient(err)) throw err;
+        if (err.status === 429) break;
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      }
     }
   }
+  throw new GeminiBusyError("Gemini is overloaded or out of quota");
 }
 
-function generate(ai: GoogleGenAI, params: GenerateContentParameters) {
-  return withRetry(() => ai.models.generateContent(params));
+function generate(ai: GoogleGenAI, params: Omit<GenerateContentParameters, "model">) {
+  return withFallback((model) => ai.models.generateContent({ ...params, model }));
 }
 
 /**
@@ -96,8 +102,8 @@ export async function proposeMapping(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiUnavailableError("GEMINI_API_KEY is not configured");
 
-  const allowed = new Set<string>(modules);
-  const specs = MAPPABLE_SPECS.filter((s) => allowed.has(s.plugin));
+  const allowed = new Set<string>(rackPlugins(modules));
+  const specs = PARAM_SPECS.filter((s) => allowed.has(s.plugin));
   if (specs.length === 0) throw new Error("This rack has no parameters a gesture can control.");
   const ModelOutputSchema = outputSchema(specs);
 
@@ -105,7 +111,6 @@ export async function proposeMapping(
   const prefs = preferences.length ? `\nThis producer's remembered preferences:\n${preferences.map((p) => `- ${p}`).join("\n")}` : "";
 
   const response = await generate(ai, {
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
     contents: `Intent: ${intent}${prefs}`,
     config: {
       systemInstruction: systemPrompt(modules, specs),
@@ -157,16 +162,16 @@ export async function streamExplanation(question: string, context: ExplainContex
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new GeminiUnavailableError("GEMINI_API_KEY is not configured");
 
-  const allowed = new Set<string>(context.modules);
-  const params = MAPPABLE_SPECS.filter((s) => allowed.has(s.plugin))
+  const allowed = new Set<string>(rackPlugins(context.modules));
+  const params = PARAM_SPECS.filter((s) => allowed.has(s.plugin))
     .map((s) => `- ${PLUGINS.find((p) => p.id === s.plugin)?.label} ${s.label}: ${s.description}`)
     .join("\n");
 
   const ai = new GoogleGenAI({ apiKey });
   // Retries cover the initial request, which is where 503 and 429 show up.
-  const chunks = await withRetry(() =>
+  const chunks = await withFallback((model) =>
     ai.models.generateContentStream({
-      model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
+      model,
       contents: question,
       config: {
         systemInstruction: `You are a friendly audio production teacher helping a beginner in a short interactive lesson called "${context.title}".
@@ -217,7 +222,6 @@ export async function transcribeRequest(audioBase64: string, mimeType: string): 
 
   const ai = new GoogleGenAI({ apiKey });
   const response = await generate(ai, {
-    model: process.env.GEMINI_MODEL || DEFAULT_MODEL,
     contents: [
       {
         role: "user",
