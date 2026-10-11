@@ -236,3 +236,73 @@ button.bg-accent {
   will-change: transform, width, height;
   transition: opacity 0.2s;
 }
+
+/* Loading state: a light sweep across the status text, and three dots in a wave. */
+.shimmer-text {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 35%, var(--text) 50%, var(--muted) 65%, var(--muted) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-sweep 1.2s linear infinite;
+}
+
+.phrase-in {
+  animation:
+    shimmer-sweep 1.2s linear infinite,
+    phrase-in 0.2s ease-out;
+}
+
+.wave-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: wave-bob 0.9s ease-in-out infinite;
+}
+
+.wave-dot:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.wave-dot:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes shimmer-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@keyframes phrase-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@keyframes wave-bob {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text,
+  .phrase-in,
+  .wave-dot {
+    animation: none;
+  }
+  .shimmer-text {
+    color: var(--muted);
+  }
+}
