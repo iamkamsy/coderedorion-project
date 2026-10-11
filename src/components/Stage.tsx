@@ -20,6 +20,8 @@ interface Props {
   onCameraStatus: (status: CameraStatus) => void;
   /** Camera-derived values. Called every tracked frame. */
   onTracked: (values: GestureValues) => void;
+  /** Called whenever a tracked frame shows an open palm. Used as a hands-free panic stop. */
+  onOpenHand: () => void;
   fakeValues: Record<Gesture, number>;
   onFakeChange: (gesture: Gesture, value: number) => void;
   values: GestureValues;
@@ -45,8 +47,19 @@ function loadCalibration(): Calibration {
 }
 
 export function Stage(props: Props) {
-  const { inputMode, onInputModeChange, onCameraStatus, onTracked, fakeValues, onFakeChange, values, chips, expanded, onToggleExpand } =
-    props;
+  const {
+    inputMode,
+    onInputModeChange,
+    onCameraStatus,
+    onTracked,
+    onOpenHand,
+    fakeValues,
+    onFakeChange,
+    values,
+    chips,
+    expanded,
+    onToggleExpand,
+  } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const trackerRef = useRef<HandTracker | null>(null);
@@ -55,6 +68,8 @@ export function Stage(props: Props) {
   const calRef = useRef<Calibration>(DEFAULT_CALIBRATION);
   const samplesRef = useRef<number[]>([]);
   const calStepRef = useRef<CalStep>(null);
+  /** Last live (non-frozen) value per gesture, held steady while that hand's pinky is stuck out. */
+  const heldValuesRef = useRef<GestureValues>({ pinch_left: null, pinch_right: null });
 
   const [status, setStatus] = useState<CameraStatus>("off");
   const [anchors, setAnchors] = useState<Partial<Record<Gesture, { x: number; y: number }>>>({});
@@ -77,16 +92,27 @@ export function Stage(props: Props) {
     (frame: TrackerFrame) => {
       const next: GestureValues = { pinch_left: null, pinch_right: null };
       const nextAnchors: Partial<Record<Gesture, { x: number; y: number }>> = {};
+      let anyOpen = false;
       for (const hand of frame.hands) {
-        next[hand.gesture] = normalizePinch(hand.ratio, calRef.current);
+        const live = normalizePinch(hand.ratio, calRef.current);
+        const held = heldValuesRef.current[hand.gesture];
+        if (hand.pinkyExtended && held !== null) {
+          next[hand.gesture] = held;
+        } else {
+          next[hand.gesture] = live;
+          heldValuesRef.current[hand.gesture] = live;
+        }
         nextAnchors[hand.gesture] = { x: 1 - hand.landmarks[8].x, y: hand.landmarks[8].y };
         if (calStepRef.current) samplesRef.current.push(hand.ratio);
+        if (hand.isOpen) anyOpen = true;
       }
       setAnchors(nextAnchors);
       onTracked(next);
+      // Only outside calibration, so holding an open palm to sample "open" during pinch calibration can't also stop audio.
+      if (anyOpen && !calStepRef.current) onOpenHand();
       drawOverlay(canvasRef.current, videoRef.current, frame, connectionsRef.current);
     },
-    [onTracked],
+    [onTracked, onOpenHand],
   );
 
   const stopCamera = useCallback(() => {
@@ -345,7 +371,7 @@ function PinchMeter({ label, value }: { label: string; value: number | null }) {
     <div className="flex items-center gap-2 rounded-full border border-white/40 bg-white/40 px-3 py-1.5 text-[#111] backdrop-blur-xl">
       <span className="text-xs font-medium text-black/70">{label}</span>
       <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/15">
-        <div className="h-full bg-accent transition-[width] duration-75" style={{ width: `${(value ?? 0) * 100}%` }} />
+        <div className="h-full bg-accent" style={{ width: `${(value ?? 0) * 100}%` }} />
       </div>
       <span className="w-9 text-right font-mono text-xs font-semibold">{value === null ? "--" : value.toFixed(2)}</span>
     </div>

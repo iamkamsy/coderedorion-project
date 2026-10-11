@@ -11,15 +11,31 @@ export interface Calibration {
   open: number;
 }
 
-export const DEFAULT_CALIBRATION: Calibration = { closed: 0.15, open: 1.2 };
+export const DEFAULT_CALIBRATION: Calibration = { closed: 0.2, open: 1.1 };
 
 const WRIST = 0;
 const THUMB_TIP = 4;
+const INDEX_MCP = 5;
 const INDEX_TIP = 8;
 const MIDDLE_MCP = 9;
+const MIDDLE_TIP = 12;
+const RING_MCP = 13;
+const RING_TIP = 16;
+const PINKY_MCP = 17;
+const PINKY_TIP = 20;
+
+/** A fingertip counts as extended once it is this many times farther from the wrist than its own MCP joint. */
+const OPEN_HAND_EXTENSION_RATIO = 1.2;
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function isFingerExtended(landmarks: readonly Point[], mcp: number, tip: number): boolean {
+  const wrist = landmarks[WRIST];
+  const mcpDist = dist(wrist, landmarks[mcp]);
+  if (mcpDist < 1e-6) return false;
+  return dist(wrist, landmarks[tip]) / mcpDist >= OPEN_HAND_EXTENSION_RATIO;
 }
 
 /**
@@ -38,4 +54,29 @@ export function normalizePinch(ratio: number, cal: Calibration): number {
   const span = cal.open - cal.closed;
   if (span <= 1e-6) return 0;
   return Math.min(1, Math.max(0, (ratio - cal.closed) / span));
+}
+
+/**
+ * True when index, middle, ring and pinky are all extended away from the wrist,
+ * i.e. a flat open palm rather than a pinch or fist. Independent of hand size and
+ * distance from the camera, same as pinchRatio.
+ */
+export function isOpenHand(landmarks: readonly Point[]): boolean {
+  if (landmarks.length < 21) return false;
+  return (
+    isFingerExtended(landmarks, INDEX_MCP, INDEX_TIP) &&
+    isFingerExtended(landmarks, MIDDLE_MCP, MIDDLE_TIP) &&
+    isFingerExtended(landmarks, RING_MCP, RING_TIP) &&
+    isFingerExtended(landmarks, PINKY_MCP, PINKY_TIP)
+  );
+}
+
+/**
+ * True when the pinky is stuck out away from the wrist while the rest of the gesture continues
+ * (unlike isOpenHand, this does not require the other fingers to be extended too). Used as a
+ * per-hand hold: stick the pinky out to freeze that hand's pinch at its current value.
+ */
+export function isPinkyExtended(landmarks: readonly Point[]): boolean {
+  if (landmarks.length < 21) return false;
+  return isFingerExtended(landmarks, PINKY_MCP, PINKY_TIP);
 }
