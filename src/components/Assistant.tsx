@@ -27,6 +27,8 @@ interface Props {
 }
 
 export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
+  // Inset boxes: the assistant always sits inside its own glass panel.
+  const box = "rounded-xl border border-border bg-inset";
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,28 +63,28 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
   };
 
   return (
-    <aside className="flex flex-1 flex-col gap-3 xl:min-h-0" aria-label="Assistant">
-      <div className="rounded-[var(--radius-panel)] border border-border bg-panel p-4">
+    <aside className="flex min-h-0 flex-col gap-2" aria-label="Assistant">
+      <div className={`${box} p-2.5`}>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
-          <button type="button" onClick={onResetDefault} className="text-xs text-muted hover:text-text">
+          <h2 className="text-[11px] font-semibold tracking-wide text-muted uppercase">Live mapping</h2>
+          <button type="button" onClick={onResetDefault} className="text-[11px] text-muted hover:text-text">
             Reset to default
           </button>
         </div>
-        <p className="mt-2 text-sm">{activeSummary}</p>
+        <p className="mt-1 text-[13px] leading-snug">{activeSummary}</p>
       </div>
 
-      <div className="flex flex-1 flex-col rounded-[var(--radius-panel)] border border-border bg-panel xl:min-h-0">
-        <div className="flex min-h-40 flex-1 flex-col gap-2 overflow-y-auto p-4" aria-live="polite">
+      <div className={`flex min-h-0 flex-1 flex-col ${box}`}>
+        <div className="flex max-h-56 flex-1 flex-col gap-1.5 overflow-y-auto p-2.5" aria-live="polite">
           {messages.length === 0 && (
-            <p className="text-sm text-muted">Tell the rack what you want to hear. The AI proposes which parameters your pinch controls.</p>
+            <p className="text-[13px] leading-snug text-muted">Tell the rack what you want to hear. The AI maps your pinch for you.</p>
           )}
           {messages.map((m, i) => (
             <p
               key={i}
-              className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${
+              className={`max-w-[90%] rounded-xl px-2.5 py-1.5 text-[13px] leading-snug ${
                 m.role === "user"
-                  ? "self-end bg-panel-raised"
+                  ? "self-end bg-accent text-white shadow-[0_4px_14px_-6px_var(--accent)]"
                   : m.role === "error"
                     ? "border border-danger/40 bg-danger/10 text-danger"
                     : "border border-border"
@@ -91,7 +93,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
               {m.text}
             </p>
           ))}
-          {loading && <p className="text-sm text-muted">Thinking about your sound...</p>}
+          {loading && <p className="text-[13px] text-muted">Thinking about your sound...</p>}
           {proposal && (
             <MappingCard
               proposal={proposal}
@@ -108,21 +110,21 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
           )}
         </div>
 
-        <div className="flex flex-wrap gap-1.5 border-t border-border px-4 pt-3">
+        <div className="flex flex-wrap gap-1 border-t border-border px-2.5 pt-2">
           {PRESETS.map((p) => (
             <button
               key={p}
               type="button"
               disabled={loading}
               onClick={() => submit(p)}
-              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted hover:border-accent/60 hover:text-text disabled:opacity-50"
+              className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted transition-colors hover:border-accent/60 hover:bg-accent/10 hover:text-accent-text disabled:opacity-50"
             >
               {p}
             </button>
           ))}
         </div>
         <form
-          className="flex gap-2 p-4"
+          className="flex gap-1.5 p-2.5"
           onSubmit={(e) => {
             e.preventDefault();
             void submit(input);
@@ -131,23 +133,26 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Make the vocals dreamier..."
+            placeholder="Make it dreamier..."
             maxLength={500}
-            className="min-w-0 flex-1 rounded-lg border border-border bg-bg px-3 py-2 text-sm placeholder:text-muted focus:border-accent/60 focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-panel-raised px-2.5 py-1.5 text-[13px] placeholder:text-muted focus:border-accent/60 focus:outline-none"
           />
           <button
             type="button"
             disabled
             title="Voice control with ElevenLabs is coming next"
-            className="rounded-lg border border-border px-3 text-sm text-muted opacity-50"
+            className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted opacity-50"
             aria-label="Voice input (coming soon)"
           >
-            Mic
+            <svg viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+              <rect x="7" y="2.5" width="6" height="10" rx="3" />
+              <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" strokeLinecap="round" />
+            </svg>
           </button>
           <button
             type="submit"
             disabled={loading || !input.trim()}
-            className="rounded-lg bg-accent px-3 text-sm font-medium text-bg disabled:opacity-50"
+            className="shrink-0 rounded-lg bg-ink px-3 text-[13px] font-semibold text-on-ink disabled:opacity-40"
           >
             Send
           </button>
@@ -160,7 +165,7 @@ export function Assistant({ activeSummary, onApprove, onResetDefault }: Props) {
 function MappingCard({ proposal, onApprove, onReject }: { proposal: Proposal; onApprove: () => void; onReject: () => void }) {
   return (
     <div className="rounded-xl border border-accent/50 bg-accent/5 p-3">
-      <p className="text-xs font-semibold tracking-wide text-accent uppercase">Proposed mapping</p>
+      <p className="text-xs font-semibold tracking-wide text-accent-text uppercase">Proposed mapping</p>
       <ul className="mt-2 flex flex-col gap-1.5 text-sm">
         {proposal.mapping.mappings.flatMap((m) =>
           m.targets.map((t) => {
@@ -181,10 +186,14 @@ function MappingCard({ proposal, onApprove, onReject }: { proposal: Proposal; on
         )}
       </ul>
       <div className="mt-3 flex gap-2">
-        <button type="button" onClick={onApprove} className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-bg">
+        <button type="button" onClick={onApprove} className="rounded-xl bg-ink px-3 py-1.5 text-sm font-semibold text-on-ink">
           Approve
         </button>
-        <button type="button" onClick={onReject} className="rounded-lg border border-border px-3 py-1.5 text-sm text-muted hover:text-text">
+        <button
+          type="button"
+          onClick={onReject}
+          className="rounded-xl border border-border bg-inset px-3 py-1.5 text-sm text-muted hover:text-text"
+        >
           Reject
         </button>
       </div>
