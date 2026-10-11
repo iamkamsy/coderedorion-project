@@ -30,9 +30,12 @@ interface Props {
   camera: CameraStatus;
   dbStatus: BatcherStatus;
   surface: SurfaceKind;
-  onSurfaceChange: (surface: SurfaceKind) => void;
+  /** Omit to hide the box-style switch. */
+  onSurfaceChange?: (surface: SurfaceKind) => void;
   /** Set inside a lesson playground. */
   lesson?: { number: number; title: string };
+  /** Run the first-visit intro again. Omit to hide the button. */
+  onReplayIntro?: () => void;
 }
 
 const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
@@ -45,7 +48,20 @@ const CAMERA_LABEL: Record<CameraStatus, { text: string; tone: string }> = {
 };
 
 export function TopBar(props: Props) {
-  const { audio, onStartAudio, stopped, onToggleStop, source, onSourceChange, camera, dbStatus, surface, onSurfaceChange, lesson } = props;
+  const {
+    audio,
+    onStartAudio,
+    stopped,
+    onToggleStop,
+    source,
+    onSourceChange,
+    camera,
+    dbStatus,
+    surface,
+    onSurfaceChange,
+    lesson,
+    onReplayIntro,
+  } = props;
   const cam = CAMERA_LABEL[camera];
   return (
     <header className="glass sticky top-3 z-30 mx-3 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl p-2 pl-2.5 sm:mx-4">
@@ -66,7 +82,7 @@ export function TopBar(props: Props) {
       </div>
 
       <div className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-        <Segmented label="Box style" options={SURFACES} value={surface} onChange={onSurfaceChange} />
+        {onSurfaceChange && <Segmented label="Box style" options={SURFACES} value={surface} onChange={onSurfaceChange} />}
 
         <span className="flex items-center gap-2 text-muted">
           <span className={`size-2 rounded-full ${cam.tone}`} />
@@ -79,6 +95,11 @@ export function TopBar(props: Props) {
 
         <Segmented label="Audio source" options={SOURCES} value={source} onChange={onSourceChange} />
 
+        {onReplayIntro && (
+          <button type="button" onClick={onReplayIntro} className="text-muted hover:text-text">
+            Intro
+          </button>
+        )}
         {!lesson && (
           <Link href="/learn" className="font-semibold text-accent-text hover:text-text">
             Learn

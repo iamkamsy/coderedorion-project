@@ -34,6 +34,19 @@ export async function POST(request: Request) {
   }
 }
 
+/** Go back to the default mapping: the owner has no active saved mapping any more. Saved rows are kept. */
+export async function DELETE(request: Request) {
+  const ownerId = getRequestOwner(request);
+  if (!ownerId) return jsonError(400, "Missing owner id");
+  try {
+    await withOwner(ownerId, (tx) => tx`update mappings set is_active = false where owner_id = ${ownerId} and is_active`);
+    return Response.json({ ok: true });
+  } catch (err) {
+    if (err instanceof DbUnavailableError) return jsonError(503, "Database not configured");
+    return jsonError(500, "Could not reset mapping");
+  }
+}
+
 /** The owner's most recent active mapping, if any. */
 export async function GET(request: Request) {
   const ownerId = getRequestOwner(request);

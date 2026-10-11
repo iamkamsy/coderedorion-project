@@ -8,8 +8,9 @@ import { GESTURES, type Gesture, type Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { GESTURE_LABEL, formatParam } from "@/lib/format";
 import { ownerHeaders } from "@/lib/ownerId";
+import { tryTarget } from "@/onboarding/steps";
 import { MAX_RECORDING_MS, startRecording, type Recording } from "@/lib/recorder";
-import { speak, stopSpeaking, useCoachVoice } from "@/lib/speech";
+import { speak, speakAfter, stopSpeaking, useCoachVoice } from "@/lib/speech";
 import { toLastSentence } from "@/lib/text";
 import { THINKING_PHRASES, ThinkingIndicator } from "./ThinkingIndicator";
 import { Collapsible } from "./Collapsible";
@@ -42,6 +43,9 @@ async function readStream(body: ReadableStream<Uint8Array>, onText: (textSoFar: 
 
 const STUDIO_TRIES = ["Make it dreamier", "Darker and tighter", "Huge slapback echo", "Wide open space"];
 
+/** The intro tour falls back to a built-in mapping after this long, so it never stalls. */
+const TOUR_TIMEOUT_MS = 8000;
+
 type Mode = "ask" | "map";
 
 interface Props {
@@ -54,9 +58,11 @@ interface Props {
   /** In a lesson: questions to suggest, and the lesson the answers are about. */
   lesson?: { slug: string; asks: readonly string[]; tries: readonly string[] };
   onAsked?: () => void;
+  /** During the intro tour: apply the mapping right away, and use `fallback` if the AI fails. */
+  tour?: { fallback: { mapping: Mapping; summary: string }; onApplied: () => void };
 }
 
-export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked }: Props) {
+export function Assistant({ modules, activeSummary, onApprove, onResetDefault, mapping, onToggleParam, lesson, onAsked, tour }: Props) {
   // The studio only changes the sound; a lesson starts on questions.
   const [mode, setMode] = useState<Mode>(lesson ? "ask" : "map");
   // Inset boxes: the assistant always sits inside its own glass panel.
@@ -158,6 +164,14 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
     }
   };
 
+  const applyForTour = (p: Proposal) => {
+    onApprove(p);
+    setMessages((m) => [...m, { role: "assistant", text: p.summary }, { role: "assistant", text: "Applied. Your pinch now drives it." }]);
+    // After the coach finishes reading the step, not over it.
+    if (voiceOn) void speakAfter(p.summary);
+    tour?.onApplied();
+  };
+
   const submit = async (raw: string) => {
     const text = raw.trim();
     if (!text || loading) return;
@@ -171,15 +185,18 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
         method: "POST",
         headers: ownerHeaders(),
         body: JSON.stringify({ intent: text, modules }),
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(tour ? TOUR_TIMEOUT_MS : 20000),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "The AI request failed.");
       const valid = validateMapping(data.mapping, { plugins: modules });
       if (!valid.ok) throw new Error("The AI returned a mapping we could not use.");
-      setProposal({ mapping: valid.mapping, summary: String(data.summary ?? ""), intent: text });
+      const next = { mapping: valid.mapping, summary: String(data.summary ?? ""), intent: text };
+      if (tour) return applyForTour(next);
+      setProposal(next);
       setMessages((m) => [...m, { role: "assistant", text: data.summary }]);
     } catch (err) {
+      if (tour) return applyForTour({ ...tour.fallback, intent: text });
       const msg = err instanceof Error && err.name !== "TimeoutError" ? err.message : "The AI took too long.";
       setMessages((m) => [...m, { role: "error", text: `${msg} The current mapping is still live.` }]);
     } finally {
@@ -285,6 +302,7 @@ export function Assistant({ modules, activeSummary, onApprove, onResetDefault, m
             <button
               key={p}
               type="button"
+              data-tour={tryTarget(p)}
               disabled={loading}
               onClick={() => submit(p)}
               className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted transition-colors hover:border-accent/60 hover:bg-accent/10 hover:text-accent-text disabled:opacity-50"

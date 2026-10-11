@@ -46,6 +46,7 @@ let audio: HTMLAudioElement | null = null;
 let current = 0;
 let speaking = false;
 let pendingUnlock: (() => void) | null = null;
+let playing: Promise<void> = Promise.resolve();
 
 function setSpeaking(v: boolean) {
   if (speaking === v) return;
@@ -77,7 +78,22 @@ function clipFor(text: string): Promise<string> {
  * voice is a nice-to-have, so failures are silent. If the browser blocks audio before the
  * first click, it plays on the next click instead.
  */
-export async function speak(text: string): Promise<void> {
+export function speak(text: string): Promise<void> {
+  playing = play(text);
+  return playing;
+}
+
+/**
+ * Say `text` once whatever is speaking now has finished, instead of cutting it off. Dropped
+ * if something else is said (or speech is stopped) in the meantime.
+ */
+export async function speakAfter(text: string): Promise<void> {
+  const id = current;
+  await playing;
+  if (id === current) await speak(text);
+}
+
+async function play(text: string): Promise<void> {
   const id = ++current;
   audio?.pause();
   pendingUnlock = null;
