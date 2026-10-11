@@ -38,9 +38,10 @@ export const PARAM_SPECS = [
     unit: "dB",
     min: -90,
     max: -20,
-    default: -50,
+    // Fully open by default: an automatic gate chattered on held notes and phrase tails.
+    default: -90,
     curve: "linear",
-    description: "Noise gate on live input. Signal quieter than this is muted between phrases.",
+    description: "Noise gate on live input. Off at -90 dB. Raise it to mute signal quieter than this between phrases.",
   },
   {
     plugin: "distortion",

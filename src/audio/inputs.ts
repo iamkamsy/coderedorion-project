@@ -17,7 +17,8 @@ export const SOURCE_LABEL: Record<SourceKind, string> = {
 export const LIVE_SOURCES: Record<Exclude<SourceKind, "loop">, LiveSourcePreset> = {
   mic: {
     label: SOURCE_LABEL.mic,
-    constraints: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    // Browser noise suppression and gain control duck the voice in and out, so pass it through.
+    constraints: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
     lowCutHz: 100,
   },
   line: {

@@ -3,8 +3,8 @@ import { clampToSchema } from "./paramSchema";
 import { LIVE_SOURCES, isLiveSource } from "./inputs";
 
 describe("live source presets", () => {
-  it("uses speech processing for the vocal mic only", () => {
-    expect(LIVE_SOURCES.mic.constraints).toMatchObject({ noiseSuppression: true, echoCancellation: true, autoGainControl: true });
+  it("never lets the browser gate or pump a live source", () => {
+    expect(LIVE_SOURCES.mic.constraints).toMatchObject({ noiseSuppression: false, echoCancellation: true, autoGainControl: false });
     expect(LIVE_SOURCES.line.constraints).toMatchObject({ noiseSuppression: false, echoCancellation: false, autoGainControl: false });
   });
 
