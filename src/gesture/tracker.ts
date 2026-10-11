@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker, type NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { Gesture } from "@/mapping/types";
+import { gestureForHandedness } from "./handedness";
 import { OneEuroFilter } from "./oneEuro";
 import { isOpenHand, isPinkyExtended, pinchRatio } from "./pinch";
 
@@ -63,10 +64,7 @@ export class HandTracker {
       const hands: TrackedHand[] = [];
       const seen = new Set<Gesture>();
       result.landmarks.forEach((landmarks, i) => {
-        // MediaPipe labels handedness as if the image were mirrored. Our frames are
-        // not mirrored, so its "Left" is the user's right hand.
-        const label = result.handedness[i]?.[0]?.categoryName;
-        const gesture: Gesture = label === "Left" ? "pinch_right" : "pinch_left";
+        const gesture = gestureForHandedness(result.handedness[i]?.[0]?.categoryName);
         if (seen.has(gesture)) return;
         const raw = pinchRatio(landmarks);
         if (raw === null) return;
