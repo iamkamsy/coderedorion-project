@@ -11,8 +11,6 @@ export interface ParamSpec {
   curve: Curve;
   /** Minimum time between applied changes. Used where a change is expensive. */
   throttleMs?: number;
-  /** False for parameters that gestures and Gemini may not bind (input conditioning). Defaults to true. */
-  mappable?: boolean;
   description: string;
 }
 
@@ -31,7 +29,6 @@ export const PARAM_SPECS = [
     max: 300,
     default: 100,
     curve: "exp",
-    mappable: false,
     description: "High-pass on live input. Removes rumble and bass bleed from speakers in the room.",
   },
   {
@@ -43,7 +40,6 @@ export const PARAM_SPECS = [
     max: -20,
     default: -50,
     curve: "linear",
-    mappable: false,
     description: "Noise gate on live input. Signal quieter than this is muted between phrases.",
   },
   {
@@ -204,13 +200,6 @@ export function paramKey(plugin: string, param: string): string {
 export function getParamSpec(plugin: string, param: string): ParamSpec | undefined {
   return SPEC_BY_KEY.get(paramKey(plugin, param));
 }
-
-export function isMappable(spec: ParamSpec): boolean {
-  return spec.mappable !== false;
-}
-
-/** Parameters a gesture mapping may target. */
-export const MAPPABLE_SPECS: ParamSpec[] = PARAM_SPECS.filter(isMappable);
 
 export function specsForPlugin(plugin: PluginId): ParamSpec[] {
   return PARAM_SPECS.filter((s) => s.plugin === plugin);

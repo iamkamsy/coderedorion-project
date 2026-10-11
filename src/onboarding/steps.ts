@@ -1,4 +1,4 @@
-import { GESTURES, type Gesture, type GestureValues, type Mapping } from "@/mapping/types";
+import { GESTURES, type Gesture, type GestureValues } from "@/mapping/types";
 
 /** Side panels the tour opens one at a time. Until then the camera has the whole screen. */
 export type Panel = "rack" | "spectrum" | "assistant";
@@ -45,9 +45,6 @@ export interface OnboardingStep {
 
 /** The intro's id for "finished" tracking, alongside the lesson slugs. */
 export const INTRO_SLUG = "intro";
-
-/** The suggestion the tour taps in the assistant. Must match one of the studio's suggestion buttons. */
-export const TOUR_INTENT = "Make it dreamier";
 
 export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
@@ -117,10 +114,10 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
   {
     id: "assistant",
-    title: "Ask for a sound in plain words",
-    body: "Describe what you want and the AI remaps your pinch. Watch: we'll tap Make it dreamier, and it will tell you what it changed.",
+    title: "Ask for a sound out loud",
+    body: "Say “Hey Gesture Labs”, then ask for a sound, like “make it dreamier”. Say yes when it reads the change back, and the AI remaps your pinch.",
     demo: null,
-    pointers: [{ target: tryTarget(TOUR_INTENT), side: "top" }],
+    pointers: [{ target: "voice", side: "top" }],
     reveals: "assistant",
     check: { kind: "ai-applied" },
     doneNote: "Applied. Pinch again to hear the difference, then press Next.",
@@ -144,26 +141,6 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
     check: { kind: "playing" },
   },
 ];
-
-/** Applied when the AI is slow or down, so the tour never stalls. */
-export const DREAMY_FALLBACK: { mapping: Mapping; summary: string } = {
-  mapping: {
-    mappings: [
-      {
-        gesture: "pinch_right",
-        targets: [
-          { plugin: "reverb", param: "wet", min: 0.3, max: 0.9, curve: "linear" },
-          { plugin: "delay", param: "feedback", min: 0.3, max: 0.7, curve: "linear" },
-        ],
-      },
-      {
-        gesture: "pinch_left",
-        targets: [{ plugin: "filter", param: "frequency", min: 300, max: 6000, curve: "exp" }],
-      },
-    ],
-  },
-  summary: "Dreamier: your right pinch now opens a long, washy reverb with more echo, and your left pinch keeps the highs soft.",
-};
 
 export function isRevealed(panel: Panel, index: number): boolean {
   const at = ONBOARDING_STEPS.findIndex((s) => s.reveals === panel);

@@ -1,4 +1,4 @@
-import { clampToSchema, getParamSpec, paramKey } from "@/audio/paramSchema";
+import { PARAM_SPECS, clampToSchema, getParamSpec, paramKey } from "@/audio/paramSchema";
 import type { Curve } from "@/audio/paramSchema";
 import { MAX_TARGETS_PER_GESTURE, type Gesture, type GestureValues, type Mapping } from "./types";
 
@@ -29,13 +29,17 @@ export function scaleValue(t: number, min: number, max: number, curve: Curve): n
   }
 }
 
-/** Compute the clamped parameter values a mapping produces for the current gestures. */
-export function computeChanges(mapping: Mapping, values: GestureValues): ParamChange[] {
+/**
+ * Compute the clamped parameter values a mapping produces for the current gestures.
+ * Locked parameter keys are skipped: they hold their value while the pinch moves.
+ */
+export function computeChanges(mapping: Mapping, values: GestureValues, locked: ReadonlySet<string> = new Set()): ParamChange[] {
   const changes: ParamChange[] = [];
   for (const m of mapping.mappings) {
     const v = values[m.gesture];
     if (v === null) continue;
     for (const t of m.targets) {
+      if (locked.has(paramKey(t.plugin, t.param))) continue;
       const raw = scaleValue(v, t.min, t.max, t.curve);
       changes.push({ plugin: t.plugin, param: t.param, value: clampToSchema(t.plugin, t.param, raw), gesture: m.gesture });
     }
@@ -48,8 +52,9 @@ export function applyMapping(
   mapping: Mapping,
   values: GestureValues,
   setParam: (plugin: string, param: string, value: number) => void,
+  locked?: ReadonlySet<string>,
 ): ParamChange[] {
-  const changes = computeChanges(mapping, values);
+  const changes = computeChanges(mapping, values, locked);
   for (const c of changes) setParam(c.plugin, c.param, c.value);
   return changes;
 }
@@ -96,4 +101,33 @@ export function toggleTarget(mapping: Mapping, gesture: Gesture, plugin: string,
   }
 
   return mappings.length > 0 ? { mappings } : null;
+}
+
+/**
+ * Turn a spoken lock request into parameter keys. Comma-separated refs: "pinch_right" or
+ * "pinch_left" (everything that hand drives), "all" (everything any hand drives), or one param
+ * by key ("phaser.frequency") or by its on-screen name ("phaser rate"), in any case. Refs that
+ * match nothing come back in `unknown`.
+ */
+export function resolveParamRefs(refs: string, mapping: Mapping): { keys: string[]; unknown: string[] } {
+  const keys = new Set<string>();
+  const unknown: string[] = [];
+  for (const ref of refs
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean)) {
+    const lower = ref.toLowerCase();
+    if (lower === "all") {
+      for (const k of boundParams(mapping).keys()) keys.add(k);
+    } else if (lower === "pinch_right" || lower === "pinch_left") {
+      for (const t of mapping.mappings.find((m) => m.gesture === lower)?.targets ?? []) keys.add(paramKey(t.plugin, t.param));
+    } else {
+      const spec = PARAM_SPECS.find(
+        (s) => paramKey(s.plugin, s.param).toLowerCase() === lower || `${s.plugin} ${s.label}`.toLowerCase() === lower.replace(".", " "),
+      );
+      if (spec) keys.add(paramKey(spec.plugin, spec.param));
+      else unknown.push(ref);
+    }
+  }
+  return { keys: [...keys], unknown };
 }

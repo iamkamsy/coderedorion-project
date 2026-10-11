@@ -3,24 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { LIVE_SOURCES, SOURCE_LABEL, isLiveSource, type SourceKind } from "@/audio/inputs";
 import type { Rack } from "@/audio/rack";
-import { getParamSpec, PLUGINS } from "@/audio/paramSchema";
+import { getParamSpec, paramKey, PLUGINS } from "@/audio/paramSchema";
 import { STUDIO_BYPASSED, STUDIO_MODULES, defaultValuesFor, isEffectId, type Division, type EffectId } from "@/audio/rackSpec";
 import { DEFAULT_MAPPING } from "@/mapping/defaults";
-import { applyMapping, boundParams, computeChanges, toggleTarget } from "@/mapping/engine";
+import { boundParams, computeChanges, toggleTarget } from "@/mapping/engine";
 import type { Gesture, GestureValues, Mapping } from "@/mapping/types";
 import { validateMapping } from "@/mapping/validate";
 import { EventBatcher, type BatcherStatus } from "@/lib/eventBatcher";
 import { formatParam, summarizeMapping } from "@/lib/format";
 import { syncDefaultConsent } from "@/lib/consent";
 import { ownerHeaders } from "@/lib/ownerId";
-import { DREAMY_FALLBACK, pinchedClosed } from "@/onboarding/steps";
+import { pinchedClosed } from "@/onboarding/steps";
 import { useOnboarding } from "@/onboarding/useOnboarding";
 import { getTutorial, type Preset } from "@/tutorials";
 import type { CoachSignals } from "@/tutorials/checks";
-import { Assistant, type Proposal } from "./Assistant";
+import { Assistant, LiveMapping, MappingCard, type Proposal } from "./Assistant";
 import { OnboardingCoach } from "./OnboardingCoach";
 import { PresetBar } from "./PresetBar";
 import { TutorialCoach } from "./TutorialCoach";
+import { VoiceAgent } from "./VoiceAgent";
 import { RackPanel } from "./RackPanel";
 import { Spectrum } from "./Spectrum";
 import { Stage, type CameraStatus, type Chip, type InputMode, type StageHandle } from "./Stage";
@@ -101,6 +102,9 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   const [trackedValues, setTrackedValues] = useState<GestureValues>({ pinch_left: null, pinch_right: null });
   const [mapping, setMapping] = useState<Mapping>(startMapping);
   const [summary, setSummary] = useState(startSummary);
+  const [voiceProposal, setVoiceProposal] = useState<Proposal | null>(null);
+  /** Param keys the pinch no longer moves; they hold their value until unlocked. */
+  const [locked, setLocked] = useState<ReadonlySet<string>>(new Set());
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [presetsLoaded, setPresetsLoaded] = useState<ReadonlySet<string>>(new Set());
   const [bypassToggled, setBypassToggled] = useState<ReadonlySet<string>>(new Set());
@@ -165,18 +169,46 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   // During the intro, the stop and lock gestures only work on the steps that teach them.
   const tourStep = tour.step?.id;
 
-  // Drive the rack from the active mapping whenever gestures or the mapping change.
+  // Pinch-driven values are derived during render instead of copied into state by an effect. A camera
+  // frame then costs one render, and effects never chain state updates from one frame to the next
+  // (which React reports as "Maximum update depth exceeded").
+  const driven = useMemo(() => computeChanges(mapping, gestureValues, locked), [mapping, gestureValues, locked]);
+  const shownParams = useMemo(() => {
+    if (driven.length === 0) return params;
+    const next = { ...params };
+    for (const c of driven) next[paramKey(c.plugin, c.param)] = c.value;
+    return next;
+  }, [params, driven]);
+
+  /** The last value the pinch set on each param since the mapping or locks last changed. */
+  const lastDrivenRef = useRef<Record<string, number>>({});
+  // A param that stops following the pinch (unmapped or locked) keeps showing the value the pinch left it at.
+  // Declared before the effect below so it folds in the previous mapping's values before they are refilled.
   useEffect(() => {
-    const r = rackRef.current;
-    const changes = r ? applyMapping(mapping, gestureValues, (p, k, v) => r.setParam(p, k, v)) : computeChanges(mapping, gestureValues);
-    if (changes.length === 0) return;
-    setParams((prev) => {
-      const next = { ...prev };
-      for (const c of changes) next[`${c.plugin}.${c.param}`] = c.value;
+    const last = lastDrivenRef.current;
+    lastDrivenRef.current = {};
+    if (Object.keys(last).length > 0) setParams((prev) => ({ ...prev, ...last }));
+  }, [mapping, locked]);
+
+  // Send the pinch values to the rack, including a rack that just started.
+  useEffect(() => {
+    for (const c of driven) {
+      rack?.setParam(c.plugin, c.param, c.value);
+      lastDrivenRef.current[paramKey(c.plugin, c.param)] = c.value;
+    }
+    if (rack && driven.length > 0) batcherRef.current?.push(driven);
+  }, [driven, rack]);
+
+  const lockParams = useCallback((keys: readonly string[], on: boolean) => {
+    setLocked((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) {
+        if (on) next.add(k);
+        else next.delete(k);
+      }
       return next;
     });
-    if (r) batcherRef.current?.push(changes);
-  }, [mapping, gestureValues]);
+  }, []);
 
   const startAudio = useCallback(
     async (silent = false) => {
@@ -194,7 +226,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
           r.dispose();
           return;
         }
-        for (const [key, value] of Object.entries(params)) {
+        for (const [key, value] of Object.entries(shownParams)) {
           const [plugin, param] = key.split(".");
           r.setParam(plugin, param, value);
         }
@@ -219,7 +251,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
         startingRef.current = false;
       }
     },
-    [bypassed, division, modules, params, source],
+    [bypassed, division, modules, shownParams, source],
   );
 
   const changeBypass = useCallback((id: EffectId, off: boolean) => {
@@ -346,6 +378,12 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     [changeBypass],
   );
 
+  // A voice-approved mapping also completes the intro tour's "ask out loud" step.
+  const approveVoice = (p: Proposal) => {
+    approve(p);
+    tour.noteAiApplied();
+  };
+
   // Hand-pick what a gesture controls. No-ops if it would remove the mapping's last target
   // or exceed the per-gesture target limit; toggleTarget returns null in both cases.
   const toggleParam = useCallback(
@@ -384,11 +422,11 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
         const spec = getParamSpec(t.plugin, t.param);
         if (!spec) continue;
         const plugin = PLUGINS.find((p) => p.id === t.plugin)?.label ?? t.plugin;
-        out[m.gesture].push({ label: `${plugin} ${spec.label}`, value: formatParam(spec, params[`${t.plugin}.${t.param}`]) });
+        out[m.gesture].push({ label: `${plugin} ${spec.label}`, value: formatParam(spec, shownParams[`${t.plugin}.${t.param}`]) });
       }
     }
     return out;
-  }, [mapping, params]);
+  }, [mapping, shownParams]);
 
   const resetMapping = () => {
     mappingChosenRef.current = true;
@@ -399,7 +437,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
     if (!tutorial) fetch("/api/mappings", { method: "DELETE", headers: ownerHeaders(), signal: AbortSignal.timeout(5000) }).catch(() => {});
   };
 
-  const signals: CoachSignals = { audioOn: audio === "on", abUsed, params, division, presetsLoaded, bypassToggled, asked };
+  const signals: CoachSignals = { audioOn: audio === "on", abUsed, params: shownParams, division, presetsLoaded, bypassToggled, asked };
 
   // Three columns from lg up keep the camera centered on the page. As the window narrows the side boxes
   // shrink toward 220px and the camera takes what is left; below lg everything stacks with the camera on top.
@@ -413,22 +451,52 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             className={
               wide
                 ? `${OVERLAY} left-8 w-[300px] xl:w-[316px] ${touring ? "panel-in" : ""}`
-                : "order-2 flex flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
+                : "order-2 flex flex-col gap-4 lg:order-none lg:col-start-1 lg:row-start-1 lg:min-h-0"
             }
           >
-            <section className="rounded-[var(--radius-panel)] glass" aria-label="AI assistant">
+            {/* Live mapping gives up height first and scrolls inside its box, so the assistant below always stays on screen. */}
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius-panel)] glass" aria-label="Live mapping">
+              <Collapsible
+                title="Live mapping"
+                defaultOpen
+                scrollBody
+                actions={
+                  <button type="button" onClick={resetMapping} className="mr-3.5 shrink-0 text-[11px] text-muted hover:text-text">
+                    Reset to default
+                  </button>
+                }
+              >
+                <LiveMapping summary={summary} mapping={mapping} modules={modules} onToggleParam={toggleParam} />
+              </Collapsible>
+            </section>
+            <section className="shrink-0 rounded-[var(--radius-panel)] glass" aria-label="AI assistant" data-tour="voice">
               <Collapsible title="AI assistant" defaultOpen>
-                <Assistant
+                <VoiceAgent
                   modules={modules}
-                  activeSummary={summary}
-                  onApprove={approve}
-                  onResetDefault={resetMapping}
+                  summary={summary}
+                  audioOn={audio === "on"}
+                  playing={audio === "on" && !stopped}
+                  onSetStopped={setAudioStopped}
+                  onApprove={approveVoice}
+                  proposal={voiceProposal}
+                  onProposal={setVoiceProposal}
                   mapping={mapping}
-                  onToggleParam={toggleParam}
-                  lesson={tutorial ? { slug: tutorial.slug, asks: tutorial.asks, tries: tutorial.tries } : undefined}
-                  onAsked={() => setAsked(true)}
-                  tour={tour.step?.id === "assistant" ? { fallback: DREAMY_FALLBACK, onApplied: tour.noteAiApplied } : undefined}
+                  bypassed={bypassed}
+                  locked={locked}
+                  onSetEffect={(id, on) => changeBypass(id, !on)}
+                  onLock={lockParams}
                 />
+                {/* Lessons keep the typed chat: their "ask a question" steps wait for it. */}
+                {tutorial && (
+                  <div className="mt-2">
+                    <Assistant
+                      modules={modules}
+                      onApprove={approve}
+                      lesson={{ slug: tutorial.slug, asks: tutorial.asks, tries: tutorial.tries }}
+                      onAsked={() => setAsked(true)}
+                    />
+                  </div>
+                )}
               </Collapsible>
             </section>
           </div>
@@ -452,6 +520,18 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             chips={chips}
             expanded={wide}
             onToggleExpand={touring ? undefined : () => setExpanded((v) => !v)}
+            card={
+              voiceProposal && (
+                <MappingCard
+                  proposal={voiceProposal}
+                  onApprove={() => {
+                    approveVoice(voiceProposal);
+                    setVoiceProposal(null);
+                  }}
+                  onReject={() => setVoiceProposal(null)}
+                />
+              )
+            }
           />
           {/* Over the expanded camera, the spectrum floats as a slim bar beside the shrink button, clear of the pinch meters. */}
           {tour.shows("spectrum") && (
@@ -468,13 +548,15 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             className={
               wide
                 ? `${OVERLAY} right-8 w-[280px] ${touring ? "panel-in" : ""}`
-                : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto"
+                : "order-3 flex flex-col gap-4 lg:order-none lg:col-start-3 lg:row-start-1 lg:min-h-0"
             }
           >
             <RackPanel
               modules={modules}
-              values={params}
+              values={shownParams}
               bound={bound}
+              locked={locked}
+              onUnlock={(key) => lockParams([key], false)}
               onManualChange={manualChange}
               rack={rack}
               showInput={isLiveSource(source)}

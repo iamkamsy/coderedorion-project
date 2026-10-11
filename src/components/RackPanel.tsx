@@ -12,6 +12,9 @@ interface Props {
   modules: readonly EffectId[];
   values: Record<string, number>;
   bound: Map<string, Gesture>;
+  /** Bound params frozen by a voice "lock"; the pinch no longer moves them. */
+  locked: ReadonlySet<string>;
+  onUnlock: (key: string) => void;
   onManualChange: (plugin: string, param: string, value: number) => void;
   rack: Rack | null;
   /** Show the input stage (low cut, gate). Only useful with a live source. */
@@ -26,7 +29,20 @@ interface Props {
 
 /** All effects in one compact glass box, each effect a dropdown, with the output meter at the bottom. */
 export function RackPanel(props: Props) {
-  const { modules, values, bound, onManualChange, rack, showInput, bypassed, onBypassChange, division, onDivisionChange } = props;
+  const {
+    modules,
+    values,
+    bound,
+    locked,
+    onUnlock,
+    onManualChange,
+    rack,
+    showInput,
+    bypassed,
+    onBypassChange,
+    division,
+    onDivisionChange,
+  } = props;
   const loaded = new Set<string>(rackPlugins(modules));
   if (!showInput) loaded.delete("input");
   const plugins = PLUGINS.filter((p) => loaded.has(p.id));
@@ -56,7 +72,15 @@ export function RackPanel(props: Props) {
                   defaultOpen
                 >
                   <div className={`transition-opacity ${off ? "opacity-45" : ""}`}>
-                    <PluginParams pluginId={plugin.id} values={values} bound={bound} division={division} onManualChange={onManualChange} />
+                    <PluginParams
+                      pluginId={plugin.id}
+                      values={values}
+                      bound={bound}
+                      locked={locked}
+                      onUnlock={onUnlock}
+                      division={division}
+                      onManualChange={onManualChange}
+                    />
                     {plugin.id === "delay" && <DivisionPicker value={division} onChange={onDivisionChange} />}
                   </div>
                 </Collapsible>
@@ -84,12 +108,16 @@ function PluginParams({
   pluginId,
   values,
   bound,
+  locked,
+  onUnlock,
   division,
   onManualChange,
 }: {
   pluginId: PluginId;
   values: Record<string, number>;
   bound: Map<string, Gesture>;
+  locked: ReadonlySet<string>;
+  onUnlock: (key: string) => void;
   division: Division | null;
   onManualChange: (plugin: string, param: string, value: number) => void;
 }) {
@@ -99,6 +127,9 @@ function PluginParams({
       {specsForPlugin(pluginId).map((spec) => {
         const key = paramKey(spec.plugin, spec.param);
         const gesture = bound.get(key);
+        const isLocked = gesture !== undefined && locked.has(key);
+        /** Moving with a pinch right now: bound and not locked. */
+        const driven = gesture !== undefined && !isLocked;
         const synced = key === "delay.delayTime" && division !== null ? DIVISIONS[division].label : null;
         const value = values[key];
         // Exponential params get a log-scaled slider so the useful range is not squashed.
@@ -112,7 +143,17 @@ function PluginParams({
             <span className="flex items-center justify-between text-[11px]">
               <span className="flex items-center gap-2" title={spec.description}>
                 {spec.label}
-                {gesture && (
+                {isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => onUnlock(key)}
+                    className="rounded-full bg-panel-raised px-1.5 py-px text-[10px] font-medium"
+                    title={`Locked: ${GESTURE_LABEL[gesture]} no longer moves this. Click to unlock.`}
+                  >
+                    Locked
+                  </button>
+                )}
+                {driven && (
                   <span
                     className="rounded-full bg-accent/15 px-1.5 py-px text-[10px] font-medium text-accent-text"
                     title={`Driven by ${GESTURE_LABEL[gesture]}`}
@@ -122,7 +163,7 @@ function PluginParams({
                 )}
                 {synced && <span className="rounded-full bg-panel-raised px-1.5 py-px text-[10px] font-medium">Synced {synced}</span>}
               </span>
-              <span className={`font-mono text-xs ${gesture ? "text-accent-text" : "text-muted"}`}>{formatParam(spec, value)}</span>
+              <span className={`font-mono text-xs ${driven ? "text-accent-text" : "text-muted"}`}>{formatParam(spec, value)}</span>
             </span>
             {gesture || synced ? (
               // Driven by a pinch (glowing red) or locked to the beat (neutral): a bar, not a greyed-out slider.
@@ -131,11 +172,13 @@ function PluginParams({
                 aria-valuemin={0}
                 aria-valuemax={1}
                 aria-valuenow={toSlider(value)}
-                aria-label={gesture ? `${name}, driven by ${GESTURE_LABEL[gesture]}` : `${name}, synced to ${synced}`}
-                className={`my-1.5 h-1.5 overflow-hidden rounded-full ${gesture ? "bg-accent/15" : "bg-panel-raised"}`}
+                aria-label={
+                  driven ? `${name}, driven by ${GESTURE_LABEL[gesture]}` : isLocked ? `${name}, locked` : `${name}, synced to ${synced}`
+                }
+                className={`my-1.5 h-1.5 overflow-hidden rounded-full ${driven ? "bg-accent/15" : "bg-panel-raised"}`}
               >
                 <span
-                  className={`block h-full rounded-full ${gesture ? "bg-gradient-to-r from-accent to-accent-soft shadow-[0_0_8px_var(--accent)]" : "bg-cool"}`}
+                  className={`block h-full rounded-full ${driven ? "bg-gradient-to-r from-accent to-accent-soft shadow-[0_0_8px_var(--accent)]" : "bg-cool"}`}
                   style={{ width: `${toSlider(value) * 100}%` }}
                 />
               </span>

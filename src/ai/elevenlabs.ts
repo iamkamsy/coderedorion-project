@@ -60,3 +60,20 @@ export async function synthesize(text: string): Promise<ArrayBuffer> {
   if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
   return audio;
 }
+
+/**
+ * Short-lived signed URL that lets the browser open one voice conversation with our agent over a
+ * WebSocket. The API key stays here. (WebSocket rather than WebRTC: the WebRTC transport logs a
+ * console error every time a call ends.)
+ */
+export async function conversationUrl(): Promise<string> {
+  const { key, agent } = config();
+  const res = await fetch(`${API}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agent)}`, {
+    headers: { "xi-api-key": key },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`Signed URL failed (${res.status})`);
+  const url = (await res.json())?.signed_url;
+  if (typeof url !== "string" || !url) throw new Error("No signed URL returned");
+  return url;
+}
