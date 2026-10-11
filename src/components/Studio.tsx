@@ -75,6 +75,8 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   const aliveRef = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const rackRef = useRef<Rack | null>(null);
+  /** Guards startAudio against re-entry from a stale call that raced ahead of the "audio" state update. */
+  const startingRef = useRef(false);
   const [rack, setRack] = useState<Rack | null>(null);
   const [audio, setAudio] = useState<AudioState>("off");
   const [source, setSource] = useState<SourceKind>("loop");
@@ -160,6 +162,11 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   }, [mapping, gestureValues]);
 
   const startAudio = useCallback(async () => {
+    // A ref check, not just the "audio" state check callers already do: state updates are async, so a
+    // caller firing rapidly (e.g. a stale onThumbsUp closure racing ahead of a re-render) could otherwise
+    // slip through before "starting" actually lands, kicking off overlapping Rack.start() calls.
+    if (startingRef.current) return;
+    startingRef.current = true;
     setAudio("starting");
     try {
       const { Rack } = await import("@/audio/rack");
@@ -189,6 +196,8 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
       setAudio("on");
     } catch {
       setAudio("error");
+    } finally {
+      startingRef.current = false;
     }
   }, [bypassed, division, modules, params, source]);
 
@@ -226,6 +235,19 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
   const onOpenHand = useCallback(() => {
     if (!stopped) setAudioStopped(true);
   }, [stopped, setAudioStopped]);
+
+  // A thumbs-up held long enough is a hands-free "Start audio" (mirroring the TopBar button's own
+  // enabled condition) or, if the rack is already running but panic-stopped, a hands-free "Resume
+  // audio". Browsers still gate AudioContext behind a real user gesture (click/tap/key) on at least
+  // one prior interaction with the page, so starting from cold only actually unlocks sound once that
+  // has happened; resuming an already-unlocked context has no such restriction.
+  const onThumbsUp = useCallback(() => {
+    if (audio === "on") {
+      if (stopped) setAudioStopped(false);
+      return;
+    }
+    if (audio !== "starting") void startAudio();
+  }, [audio, stopped, setAudioStopped, startAudio]);
 
   // Esc is a panic stop. It only stops; resuming is a deliberate click.
   useEffect(() => {
@@ -364,6 +386,7 @@ export function Studio({ modules: studioModules = STUDIO_MODULES, initialBypasse
             onCameraStatus={setCamera}
             onTracked={setTrackedValues}
             onOpenHand={onOpenHand}
+            onThumbsUp={onThumbsUp}
             fakeValues={fakeValues}
             onFakeChange={(g, v) => setFakeValues((prev) => ({ ...prev, [g]: v }))}
             values={gestureValues}
