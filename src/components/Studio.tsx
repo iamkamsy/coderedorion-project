@@ -253,18 +253,21 @@ export function Studio({ modules = STUDIO_MODULES, initialBypassed = STUDIO_BYPA
     if (rackRef.current) batcherRef.current?.push([{ plugin, param, value: safe, gesture: null }]);
   }, []);
 
-  const approve = useCallback((p: Proposal) => {
-    setMapping(p.mapping);
-    setSummary(p.summary);
-    // A mapping on a bypassed effect would do nothing audible, so switch those effects on.
-    for (const m of p.mapping.mappings) for (const t of m.targets) if (isEffectId(t.plugin)) changeBypass(t.plugin, false);
-    fetch("/api/mappings", {
-      method: "POST",
-      headers: ownerHeaders(),
-      body: JSON.stringify({ name: p.summary.slice(0, 120) || p.intent, intent: p.intent, mapping: p.mapping }),
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => {});
-  }, [changeBypass]);
+  const approve = useCallback(
+    (p: Proposal) => {
+      setMapping(p.mapping);
+      setSummary(p.summary);
+      // A mapping on a bypassed effect would do nothing audible, so switch those effects on.
+      for (const m of p.mapping.mappings) for (const t of m.targets) if (isEffectId(t.plugin)) changeBypass(t.plugin, false);
+      fetch("/api/mappings", {
+        method: "POST",
+        headers: ownerHeaders(),
+        body: JSON.stringify({ name: p.summary.slice(0, 120) || p.intent, intent: p.intent, mapping: p.mapping }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => {});
+    },
+    [changeBypass],
+  );
 
   const changeConsent = useCallback((v: boolean) => {
     consentStore.set(v);

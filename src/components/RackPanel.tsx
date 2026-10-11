@@ -56,13 +56,7 @@ export function RackPanel(props: Props) {
                   defaultOpen
                 >
                   <div className={`transition-opacity ${off ? "opacity-45" : ""}`}>
-                    <PluginParams
-                      pluginId={plugin.id}
-                      values={values}
-                      bound={bound}
-                      division={division}
-                      onManualChange={onManualChange}
-                    />
+                    <PluginParams pluginId={plugin.id} values={values} bound={bound} division={division} onManualChange={onManualChange} />
                     {plugin.id === "delay" && <DivisionPicker value={division} onChange={onDivisionChange} />}
                   </div>
                 </Collapsible>
@@ -177,7 +171,9 @@ function BypassSwitch({ label, on, onChange }: { label: string; on: boolean; onC
       className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted hover:text-text"
     >
       {on ? "On" : "Off"}
-      <span className={`relative h-4 w-7 rounded-full border transition-colors ${on ? "border-accent bg-accent" : "border-border bg-black/10"}`}>
+      <span
+        className={`relative h-4 w-7 rounded-full border transition-colors ${on ? "border-accent bg-accent" : "border-border bg-black/10"}`}
+      >
         <span className={`absolute top-px size-3 rounded-full bg-white shadow transition-[left] ${on ? "left-3" : "left-px"}`} />
       </span>
     </button>
