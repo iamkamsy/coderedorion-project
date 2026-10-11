@@ -78,7 +78,9 @@ describe("toggleTarget", () => {
   });
 
   it("creates a new gesture entry for a hand that currently has none", () => {
-    const rightOnly: Mapping = { mappings: [{ gesture: "pinch_right", targets: [{ plugin: "reverb", param: "wet", min: 0, max: 0.8, curve: "linear" }] }] };
+    const rightOnly: Mapping = {
+      mappings: [{ gesture: "pinch_right", targets: [{ plugin: "reverb", param: "wet", min: 0, max: 0.8, curve: "linear" }] }],
+    };
     const next = toggleTarget(rightOnly, "pinch_left", "filter", "frequency");
     expect(next?.mappings.map((m) => m.gesture).sort()).toEqual(["pinch_left", "pinch_right"]);
   });
@@ -87,7 +89,9 @@ describe("toggleTarget", () => {
     const removedWet = toggleTarget(DEFAULT_MAPPING, "pinch_right", "reverb", "wet");
     expect(removedWet?.mappings.find((m) => m.gesture === "pinch_right")?.targets.map((t) => t.param)).toEqual(["feedback"]);
 
-    const soleTarget: Mapping = { mappings: [{ gesture: "pinch_left", targets: [{ plugin: "filter", param: "frequency", min: 400, max: 12000, curve: "exp" }] }] };
+    const soleTarget: Mapping = {
+      mappings: [{ gesture: "pinch_left", targets: [{ plugin: "filter", param: "frequency", min: 400, max: 12000, curve: "exp" }] }],
+    };
     expect(toggleTarget(soleTarget, "pinch_left", "filter", "frequency")).toBeNull();
   });
 
