@@ -90,7 +90,7 @@ export class Rack {
     this.input = new Tone.Gain(0.8);
     this.liveIn = new Tone.Gain(1);
     this.lowCut = new Tone.Filter({ type: "highpass", frequency: v["input.lowCut"], rolloff: -24 });
-    this.gate = new Tone.Gate({ threshold: v["input.gateThreshold"], smoothing: 0.05 });
+    this.gate = new Tone.Gate({ threshold: v["input.gateThreshold"], smoothing: 0.2 });
     this.gateMeter = new Tone.Meter({ smoothing: 0.6 });
     this.limiter = new Tone.Limiter(LIMITER_THRESHOLD_DB);
     this.master = new Tone.Gain(1);
